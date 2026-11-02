@@ -20,15 +20,15 @@
 
 \author{Rahul Saravanan (231IT054),~Shishir Hegde (231IT067),~and~Ashab Muhammed (231IT011)%
 \thanks{Authors are with the Department of Information Technology, National Institute of Technology Karnataka, Surathkal, India. (e-mail: \{rahul.saravanan, shishir.hegde, ashab.muhammed\}@nitk.edu.in)}%
-\thanks{Manuscript submitted as Mid-Semester Evaluation Report, October 2026.}}
+\thanks{Manuscript submitted as End-Semester Evaluation Report, November 2026.}}
 
-\markboth{LLM Course, NITK Surathkal, Mid-Semester Evaluation, October~2026}%
+\markboth{LLM Course, NITK Surathkal, End-Semester Evaluation, November~2026}%
 {Saravanan \MakeLowercase{\textit{et al.}}: MATP: Temporal and State-Aware Semantic Memory Buffer}
 
 \maketitle
 
 \begin{abstract}
-Long-horizon agentic LLM tasks suffer from two failure modes: FIFO context eviction causes catastrophic forgetting of early critical state, while naive retrieval-augmented generation (RAG) has no notion of mutation and retrieves superseded state vectors, causing stale-state hallucinations. We present MATP (Memory-Augmented Tool Processing), a persistent, queryable semantic memory buffer exposed as a Model Context Protocol (MCP) server. MATP introduces a piecewise retrieval scoring function $R(q, v_i)$ that hard-zeros superseded resource versions and applies exponential temporal decay to active states. Empirical evaluation on a schema-refactor benchmark shows MATP reduces direct lineage-stale retrievals to 0\% versus 20\% for naive RAG, while achieving 75\% effective precision at top-4. A complementary background abstraction engine compresses raw tool outputs by 95.4\% ($21.7\times$) while retaining 100\% of key facts, sustaining a 30-turn trajectory in under 3.5k tokens. A Bayesian policy ranking engine provides tool confidence scores with Laplacian smoothing and Shannon entropy guidance. The full system runs locally via stdio MCP with no external service dependencies.
+Long-horizon agentic LLM tasks suffer from two failure modes: FIFO context eviction causes catastrophic forgetting of early critical state, while naive retrieval-augmented generation (RAG) has no notion of mutation and retrieves superseded state vectors, causing stale-state hallucinations. We present MATP (Memory-Augmented Tool Processing), a persistent, queryable semantic memory buffer exposed as a Model Context Protocol (MCP) server. MATP introduces a piecewise retrieval scoring function $R(q, v_i)$ that hard-zeros superseded resource versions and applies exponential temporal decay to active states. Empirical evaluation on a schema-refactor benchmark shows MATP reduces direct lineage-stale retrievals to 0\% versus 20\% for naive RAG, while achieving 75\% effective precision at top-4. A complementary background abstraction engine adds SQLite-backed durability, cross-session causal-DAG invalidation, hierarchical macro-action distillation, and an asynchronous local-model worker. It compresses raw tool outputs by 92.6\% ($13.5\times$), retains 88.0\% of key facts at an equal token budget versus 37.3\% for truncated raw text, labels 24/24 causal-validity nodes correctly, and replays learned macro-actions on held-out sessions with 100\% tool-sequence and slot-binding accuracy. A Bayesian policy ranking engine provides tool confidence scores with Laplacian smoothing and Shannon entropy guidance. The full system runs locally via stdio MCP with no external service dependencies.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -44,7 +44,7 @@ We identify three concrete failure modes:
 \begin{enumerate}
     \item \textbf{Catastrophic forgetting} via FIFO: a 30-turn agent retaining only 3 context turns drops 90\% of prior steps, erasing early schema decisions and bug fixes.
     \item \textbf{Stale-state hallucination} via naive RAG: cosine similarity alone retrieves superseded resource versions with 20\% lineage-stale rate.
-    \item \textbf{Token bloat}: raw tool output averages 2,109 tokens per call; over 30 turns this explodes to 63,276 tokens, exceeding standard 8k context windows.
+    \item \textbf{Token bloat}: raw tool output averages 2,037 tokens per call; over 30 turns this reaches 61,122 tokens, exceeding standard 8k context windows.
 \end{enumerate}
 
 MATP addresses all three with three co-designed contributions: (1) a temporal and state-aware versioning layer that mathematically suppresses superseded state, (2) a background abstraction engine that distills raw tool outputs to compact semantic tuples, and (3) a Bayesian policy engine that ranks tools by confidence. All three are exposed as MCP tools over stdio with purely local execution.
@@ -258,15 +258,38 @@ S(q, G_i) = \alpha \cdot \cos(q, \mathbf{e}_i) + (1 - \alpha) \cdot \frac{|T(q) 
 \end{equation}
 where $\alpha \in [0, 1]$ balances vector cosine similarity against sparse lexical entity overlap ($T(\cdot)$), and optional hard filters $\text{filter\_tool}$ and $\text{filter\_entity}$ can be applied to enforce domain-specific constraints.
 
+\subsection{SQLite-Backed Durability}
+
+The mid-semester prototype rewrote a single JSON index on every trajectory insertion, which is both $O(N)$ per call and vulnerable to torn writes. The end-semester engine persists trajectories, adjacency, resources, macro skills and background jobs in a single SQLite database using write-ahead logging. Indexing is transactional, concurrent readers do not block the writer, and a legacy \texttt{data/matp.memory.json} file is imported exactly once (tracked by a \texttt{legacy\_imported} metadata key) into a sibling database. Retrieval executes one indexed SQL scan; the Python cache is refreshed only on writes and truth-maintenance passes. Vector embeddings are stored as compact little-endian blobs and decoded lazily.
+
+\subsection{Cross-Session Causal DAG Invalidation}
+\label{sec:dag}
+
+Each trajectory records the resources it reads, writes or deletes. Resource identifiers are canonicalised across file paths (case-normalised absolute paths), database tables, API endpoints (including query strings), git repositories and shell working directories. A write creates a new resource version in the scope's causal DAG and induces four soft validity labels:
+\begin{itemize}
+    \item \textbf{fresh}: no later write conflicts with this node (weight $1.0$);
+    \item \textbf{superseded}: a later trajectory wrote the same resource (weight $0$ unless \texttt{include\_stale=True});
+    \item \textbf{stale}: this node read a resource that was later mutated (weight $0.5 \times \tau$);
+    \item \textbf{suspect}: this node transitively depends on a stale or superseded node (weight $\tau$, decayed by $\tau_{d+1} = \gamma \tau_d$ with $\gamma = 0.8$, bounded by a depth limit and floor).
+\end{itemize}
+Retrieval therefore multiplies the hybrid score of Eq.~\eqref{eq:hybrid_search} by the validity weight, so current state outranks invalid state without deleting provenance. Invalidation is scoped by \texttt{scope\_id} (a workspace snapshot), preventing two independent tasks on the same repository from invalidating each other. A truth-maintenance pass (\texttt{recompute\_validity}) heals nodes after re-execution, and \texttt{confirm\_state} supplies a manual override; both refresh the retrieval cache atomically.
+
+\subsection{Hierarchical Macro-Action Distillation}
+
+The miner slices sessions into 10-step windows, computes a canonical action signature (tool, parameter \emph{shape}, status) that discards literal values, and clusters near-identical sequences with \texttt{difflib.SequenceMatcher}. Varying literals across cluster members are replaced by typed slots with observed examples. A level-2 skill is promoted at support $\geq 3$ and empirical success $\geq 0.8$; chains of promoted skills may themselves be mined as level-3 skills. Matching scores a candidate by
+\begin{equation}
+\label{eq:macro_match}
+S_{\text{macro}} = \bigl(0.7\cos(\mathbf{q}, \mathbf{s}) + 0.3\,\text{lex}(q,s)\bigr) \cdot \bigl(0.95 + 0.05\rho\bigr) \cdot \bigl(1 + 0.1\,\text{succ}(s)\bigr),
+\end{equation}
+where $\text{lex}$ is content-term overlap and $\rho$ is the fraction of preconditions satisfied by the current DAG state. Expansion is declarative: it substitutes bound slots into the stored step list and returns executable steps; the agent remains responsible for execution. Continued failure demotes a macro after three consecutive unsuccessful uses.
+
+\subsection{Asynchronous Local-Model Worker}
+
+The indexing hot path never waits on an LLM. Each new trajectory enqueues at most one durable job in SQLite; a separate worker process leases jobs with time-bounded leases, recovery of expired leases, retry backoff and idempotency keys. Handlers refine trajectory summaries, synthesise macro descriptions and produce session digests by calling a local Ollama \texttt{/api/chat} endpoint with JSON-schema structured output through a dependency-free \texttt{urllib} client (default model \texttt{qwen2.5:7b-instruct}). The mode is controlled by \texttt{MATP\_NEURAL}: \texttt{auto} (default) enqueues without starting a model call, \texttt{off} disables enrichment, and \texttt{on} is used when a daemon is running. A revision guard discards model output that arrives after the trajectory was re-indexed.
+
 \subsection{MCP Server Architecture}
 
-The abstraction engine is deployed as a standalone Model Context Protocol (MCP) server over standard input/output (stdio) JSON-RPC, exposing four tools:
-\begin{itemize}
-    \item \texttt{matp\_index\_trajectory}: Intercepts post-tool execution, computes $G$ and $(S, R, O)$, updates the persistent vector buffer (\texttt{data/matp.memory.json}), and appends to the episodic graph.
-    \item \texttt{matp\_query\_trajectory}: Performs hybrid dense-sparse retrieval with support for tool, status, and entity constraints.
-    \item \texttt{matp\_inspect\_graph}: Exposes the active episodic knowledge graph, returning node sets, relational edges, and central hub rankings.
-    \item \texttt{matp\_get\_context\_summary}: Synthesizes a high-density, chronological execution summary ($< 250$ tokens), enabling instantaneous working-memory restoration after context window eviction.
-\end{itemize}
+The engine is deployed as a standalone Model Context Protocol (MCP) server over standard input/output (stdio) JSON-RPC, exposing 16 tools: four core tools (\texttt{matp\_index\_trajectory}, \texttt{matp\_query\_trajectory}, \texttt{matp\_inspect\_graph}, \texttt{matp\_get\_context\_summary}), four DAG tools (\texttt{matp\_get\_lineage}, \texttt{matp\_query\_dag}, \texttt{matp\_confirm\_state}, \texttt{matp\_recompute\_validity}), five macro tools (\texttt{matp\_list\_macros}, \texttt{matp\_match\_macro}, \texttt{matp\_expand\_macro}, \texttt{matp\_mine\_macros}, \texttt{matp\_record\_macro\_use}), and three operations tools (\texttt{matp\_worker\_status}, \texttt{matp\_enqueue\_digest}, \texttt{matp\_stats}). The server is covered by subprocess-level stdio tests rather than mocks.
 
 % ============================================================
 \section{Contribution 3: Bayesian Policy Ranking Engine}
@@ -333,7 +356,7 @@ MATP (ours, $k$=4, $\lambda$=0.05) & 0/4 = 0\% & 3/4 = 75\% & 100\% \\
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:retrieval} shows MATP achieves 0\% lineage-stale rate on direct versioning (schema~v1 is hard-zeroed, $R = 0$) while improving effective precision from 60\% to 75\%. A \emph{dependent leak} remains: src/models/user.py~v1 scores $R \approx 0.38$ because its resource\_id differs from db/schema.sql, so MATP's piecewise condition does not apply. This cross-resource dependency is documented as a known limitation addressed in the endsem plan.
+Table~\ref{tab:retrieval} shows MATP achieves 0\% lineage-stale rate on direct versioning (schema~v1 is hard-zeroed, $R = 0$) while improving effective precision from 60\% to 75\%. A \emph{dependent leak} remains in the versioning-only scoring path: src/models/user.py~v1 scores $R \approx 0.38$ because its resource\_id differs from db/schema.sql. Contribution~2 closes this gap with the cross-resource causal DAG described in Section~\ref{sec:dag}, which marks such dependents suspect and down-weights them.
 
 \subsubsection{Temporal Decay Sweep}
 
@@ -356,13 +379,16 @@ Table~\ref{tab:decay} demonstrates the decay sweep for query ``configuration par
 \subsection{Benchmark 2: Token Compression and Retrieval Quality (Contribution~2)}
 
 \subsubsection{Experimental Setup}
-We evaluated Contribution~2 across a 30-turn execution sequence comprising five heterogeneous tool modalities: SQL database transactions, Python runtime tracebacks, REST API microservice calls, Bash/Git file operations, and PDF/document tabular parsing. For each execution, we measured:
+We evaluated Contribution~2 across a 30-turn execution sequence comprising five heterogeneous tool modalities: SQL database transactions, Python runtime tracebacks, REST API microservice calls, Bash/Git file operations, and PDF/document tabular parsing. All values below are produced by the scripts in \texttt{benchmarks/}; no retention or latency value is hardcoded. Token counts use \texttt{tiktoken/cl100k\_base} when installed and otherwise a documented word/punctuation heuristic (the run reported here uses the heuristic); the chosen tokenizer is recorded in every result file. We measured:
 \begin{enumerate}
-    \item Raw token footprint $O_{\text{raw}}$ vs.\ distilled structured tuple size $G$,
-    \item Cumulative context accumulation over 30 sequential turns,
-    \item Retrieval accuracy (Precision@1, Precision@3) and critical key-entity retention rate over 10 adversarial intent queries,
-    \item Retrieval latency scaling across memory buffers up to $N = 100$ records, and
-    \item Signal-to-Noise Ratio (SNR) enhancement through boilerplate filtering.
+    \item raw token footprint $O_{\text{raw}}$ vs.\ distilled tuple size $G$,
+    \item cumulative context accumulation over 30 sequential turns,
+    \item strict exact-step and domain-level Precision@1 and Precision@3 over 10 targeted queries,
+    \item key-fact retention at an equal token budget,
+    \item median retrieval latency and its scaling from $N=30$ to $N=240$,
+    \item causal-validity labels against 24 hand-labelled ground-truth nodes,
+    \item held-out macro replay and indexing overhead with and without the async queue, and
+    \item two controlled multi-agent-style transfer harnesses.
 \end{enumerate}
 
 \subsubsection{Token Compression and Context Sustainability}
@@ -376,13 +402,13 @@ We evaluated Contribution~2 across a 30-turn execution sequence comprising five 
 \textbf{Tool Domain} & \textbf{Raw $O_{\text{raw}}$} & \textbf{Distilled $G$} & \textbf{Compression} & \textbf{Factor} \\
  & \textbf{(tokens)} & \textbf{(tokens)} & \textbf{Ratio} & \\
 \midrule
-SQL Database       & 2,543 & 160 & 93.7\% & $15.9\times$ \\
-Runtime Traceback  & 1,614 & 102 & 93.7\% & $15.8\times$ \\
-REST API Response  & 1,208 & 166 & 86.3\% &  $7.3\times$ \\
-File System / Bash & 3,277 & 139 & 95.8\% & $23.6\times$ \\
-Doc / PDF Parsing  & 1,904 &  90 & 95.3\% & $21.2\times$ \\
+SQL Database       & 3,441 & 234 & 93.2\% & $14.7\times$ \\
+Runtime Traceback  & 1,808 & 107 & 94.1\% & $16.9\times$ \\
+REST API Response  & 1,416 & 178 & 87.4\% &  $8.0\times$ \\
+File System / Bash & 2,185 & 131 & 94.0\% & $16.7\times$ \\
+Doc / PDF Parsing  & 1,337 & 104 & 92.2\% & $12.9\times$ \\
 \midrule
-\textbf{Mean Overall} & \textbf{2,109} & \textbf{131} & \textbf{93.8\%} & $\mathbf{16.1\times}$ \\
+\textbf{Overall (30 turns)} & \textbf{61,122} & \textbf{4,524} & \textbf{92.6\%} & $\mathbf{13.5\times}$ \\
 \bottomrule
 \end{tabular}
 }
@@ -396,15 +422,15 @@ Doc / PDF Parsing  & 1,904 &  90 & 95.3\% & $21.2\times$ \\
 \toprule
 \textbf{Memory Strategy} & \textbf{Tokens ($t=30$)} & \textbf{8k Window Fit} & \textbf{History Retained} \\
 \midrule
-Unpruned Raw Context     & 63,276 & Fails ($7.9\times$ limit) & 100\% (Severe Bloat) \\
-FIFO(3) Sliding Window   &  6,142 & Fits ($< 8$k budget)       & 10\% (90\% Forgotten) \\
-\textbf{MATP Distilled Buffer} & \textbf{3,940} & \textbf{Fits ($< 4$k budget)} & \textbf{100\% (Complete)} \\
+Unpruned Raw Context     & 61,122 & Fails ($7.5\times$ limit) & 100\% (Severe Bloat) \\
+FIFO(3) Sliding Window   &  4,938 & Fits ($< 8$k budget)       & 10\% (90\% Forgotten) \\
+\textbf{MATP Distilled Buffer} & \textbf{4,524} & \textbf{Fits ($< 8$k budget)} & \textbf{100\% (Complete)} \\
 \bottomrule
 \end{tabular}
 }
 \end{table}
 
-As documented in Table~\ref{tab:compression}, the background abstraction engine achieves an overall mean compression ratio of 93.8\% ($16.1\times$ reduction factor) while preserving full structured entity records and relational triples. Table~\ref{tab:context_growth} contrasts long-horizon cumulative context growth: unpruned raw storage explodes to 63,276 tokens by step 30, crashing standard 8k context windows and incurring massive latency and token expenditure. Conversely, a naive sliding window (FIFO(3)) restricts tokens to 6,142 but drops 90\% of prior execution history, completely losing early database schemas and configuration parameters. The MATP buffer retains the complete 30-turn history in only 3,940 tokens, fitting comfortably within a conservative 4k context allocation.
+As documented in Table~\ref{tab:compression}, the background abstraction engine achieves an overall compression of 92.6\% ($13.5\times$) while preserving structured entity records and relational triples. Table~\ref{tab:context_growth} contrasts long-horizon cumulative context growth: unpruned raw storage reaches 61,122 tokens by step 30, exceeding a standard 8k window by $7.5\times$. A naive FIFO(3) window keeps the buffer small (4,938 tokens) but retains only 10\% of prior execution history, discarding early schemas and configuration parameters. The MATP buffer retains the complete 30-turn history in 4,524 tokens, fitting an 8k allocation while preserving every step.
 
 \begin{figure}[!t]
 \centering
@@ -418,63 +444,112 @@ As documented in Table~\ref{tab:compression}, the background abstraction engine 
 \caption{Cumulative memory footprint across 30-turn execution horizon comparing unpruned raw context, FIFO(3), and MATP semantic buffer.\label{fig:context}}
 \end{figure}
 
-\subsubsection{Retrieval Precision and Noise Resistance}
+\subsubsection{Retrieval Precision, Fact Retention and Latency}
 
 \begin{table}[!t]
-\caption{Retrieval Precision, Key Fact Recall, and Latency\label{tab:retrieval2}}
+\caption{Retrieval Quality at $N=30$: Strict Exact-Step vs.\ Domain-Level Precision, Equal-Budget Fact Retention, and Median Latency\label{tab:retrieval2}}
 \centering
 {\small
-\begin{tabular}{lcccc}
+\begin{tabular}{lccccc}
 \toprule
-\textbf{Memory Architecture} & \textbf{P@1} & \textbf{P@3} & \textbf{Fact Ret.} & \textbf{Latency ($N=30$)} \\
+\textbf{Memory Architecture} & \textbf{Strict P@1} & \textbf{Domain P@1} & \textbf{Domain P@3} & \textbf{Fact Ret.} & \textbf{Latency} \\
 \midrule
-Naive Raw Log Store   & 60.0\% & 60.0\% & 65.0\% & 1.38 ms \\
-MATP Distilled (Dense Cosine) & 80.0\% & 80.0\% & 100.0\% & 0.28 ms \\
-\textbf{MATP Hybrid (Ours)} & \textbf{90.0\%} & \textbf{80.0\%} & \textbf{100.0\%} & \textbf{2.46 ms} \\
+Naive Raw Log Store & 20.0\% & 60.0\% & 60.0\% & 37.3\% & 1.48 ms \\
+\textbf{MATP Hybrid (Ours)} & \textbf{50.0\%} & \textbf{100.0\%} & \textbf{100.0\%} & \textbf{88.0\%} & 4.68 ms \\
 \bottomrule
 \end{tabular}
 }
 \end{table}
 
-We constructed 10 targeted intent queries testing entity extraction, error diagnosis, and schema recall against the 30-turn trajectory store. As shown in Table~\ref{tab:retrieval2}, storing raw logs yields only 60.0\% Precision@1 and 65.0\% key fact recall because boilerplate tokens dilute keyword similarity. MATP's dense vector matching elevates Precision@1 to 80.0\%, while hybrid dense-sparse scoring (Eq.~\eqref{eq:hybrid_search}) achieves \textbf{90.0\% Precision@1} and \textbf{100.0\% Key Fact Retention}.
+We constructed 10 targeted intent queries testing entity extraction, error diagnosis and schema recall against the 30-turn trajectory store (Table~\ref{tab:retrieval2}). Storing raw logs yields 60.0\% domain-level P@1 because boilerplate tokens dilute keyword similarity. MATP hybrid scoring (Eq.~\eqref{eq:hybrid_search}) reaches \textbf{100.0\% domain P@1 and P@3}. Strict exact-step P@1 is deliberately harsher: the 30-turn workload repeats each of five domains six times, so several steps are content-identical and exact-step identity is ambiguous; MATP still improves strict P@1 from 20.0\% to 50.0\% and strict P@3 from 60.0\% to 80.0\%.
+
+Fact retention is measured at an \emph{equal token budget}: the raw output is truncated to the token count of MATP's distilled tuple, then scored for ground-truth fact coverage. MATP retains \textbf{88.0\%} versus \textbf{37.3\%} for the truncated raw text. MATP's median latency (4.68 ms vs.\ 1.48 ms) reflects SQLite row decoding, embedding, and validity weighting; both methods scale linearly with store size (Table~\ref{tab:latency_scale}).
+
+\begin{table}[!t]
+\caption{Measured Query Latency Scaling (Median of Repeated Queries, ms)\label{tab:latency_scale}}
+\centering
+{\small
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Store size $N$} & \textbf{30} & \textbf{60} & \textbf{120} & \textbf{240} \\
+\midrule
+Naive raw scan & 1.12 & 2.57 & 4.98 & 10.01 \\
+\textbf{MATP SQLite scan} & 3.79 & 10.09 & 18.69 & 43.83 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
 
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{fig3_retrieval_and_latency.png}
-\caption{Retrieval precision, key fact retention, and CPU linear scan latency scaling from $N=5$ to $N=100$ records.\label{fig:retrieval}}
+\caption{Retrieval quality (strict/domain P@1, P@3, equal-budget fact retention) and measured CPU latency scaling from $N=30$ to $N=240$.\label{fig:retrieval}}
 \end{figure}
 
 \begin{figure}[!t]
 \centering
-\includegraphics[width=\columnwidth]{fig4_signal_noise_ratio.png}
-\caption{Signal-to-Noise Ratio (SNR) analysis showing percentage of low-SNR boilerplate pruned versus retained core state facts.\label{fig:snr}}
+\includegraphics[width=\columnwidth]{fig4_token_mass.png}
+\caption{Measured token mass removed versus retained by distillation, per tool domain.\label{fig:snr}}
 \end{figure}
 
-\subsubsection{Signal-to-Noise Ratio (SNR) Analysis}
-Fig.~\ref{fig:snr} illustrates the information density breakdown across modalities. In file scans and document parsing, up to 95.8\% and 95.3\% of raw content represents syntactic boilerplate (formatting spaces, HTTP headers, stack frame pointers, OCR page numbers) with no causal relevance to agent reasoning. The distillation engine filters this low-SNR noise while preserving 100\% of actionable entity state (table columns, error types, modified file paths, and test metrics).
+\subsubsection{Token Mass Analysis}
+Fig.~\ref{fig:snr} reports the measured split between removed and retained token mass. Across modalities, 87.4\%--94.1\% of raw tokens are pruned while the extracted entities, error classes, endpoints, file paths and test outcomes are preserved. The removal is not a generic character truncation: it targets repeated stack frames, HTTP transit metadata, OCR boilerplate, and long JSON arrays, so the remaining mass carries the facts that the retrieval queries actually reference.
 
 \subsubsection{Episodic Knowledge Graph and Working-Memory Recovery}
-Across the 30-turn workload, the engine synthesized 87 directed $(S, R, O)$ triples over 42 unique entity nodes. Centrality analysis (Eq.~\eqref{eq:degree}) isolated the primary operational hubs: the \texttt{users} table ($\text{deg}=14$), \texttt{OperationalError} ($\text{deg}=9$), and \texttt{config/auth\_v2.yaml} ($\text{deg}=8$). When evaluated with \texttt{matp\_get\_context\_summary}, the entire 30-step trajectory was condensed into a 220-token structured executive snapshot, representing a 94.4\% compression over the already-distilled buffer and enabling instantaneous LLM working memory re-population.
+Across the 30-turn workload, the engine synthesised 90 directed $(S, R, O)$ triples over 26 unique entity nodes. Centrality analysis (Eq.~\eqref{eq:degree}) isolated the primary operational hubs: the \texttt{users} table ($\text{deg}=30$), \texttt{config/auth\_v2.yaml} ($\text{deg}=24$), and \texttt{OperationalError} ($\text{deg}=12$). The chronological \texttt{matp\_get\_context\_summary} view of all 30 steps measured 1,987 tokens (heuristic tokenizer), a 56.1\% reduction over the already-distilled 4,524-token buffer and a 96.7\% reduction over the 61,122-token raw log.
 
-\subsubsection{Consolidated Performance Metrics Scorecard}
-Table~\ref{tab:metrics_summary} provides an overarching comparative summary of all primary empirical metrics evaluated for Contribution~2 against baseline memory approaches. The background abstraction engine achieves a 93.8\% reduction in active token footprint ($16.1\times$ compression) while completely preventing the 90\% history loss of sliding-window FIFO heuristics and improving semantic retrieval precision by 30.0\% over unpruned raw text.
+\subsubsection{Causal DAG Replay}
+We constructed nine scenarios with 24 hand-labelled nodes covering direct staleness, supersession, transitive suspects, cross-session invalidation, scope isolation, healing after re-execution, two-hop dependency chains, manual override, and file/API writes. \textbf{Validity-label accuracy was 24/24 = 100\%} across fresh, stale, suspect and superseded classes (all per-class precision, recall and F1 equal 1.0). Scope isolation is exercised explicitly: identical table names written in two distinct scopes both remain fresh.
+
+\subsubsection{Hierarchical Macro Replay}
+Two 10-step routines (schema migration and report generation) were mined from three training sessions each and replayed on held-out fourth sessions whose literal file names had never been observed. Both routines were recovered as promoted level-2 skills with \textbf{100\% held-out tool-sequence match and 100\% slot-binding accuracy}. A macro definition occupies 214--226 tokens versus 461--480 tokens for the full compact trajectory, a $\approx 53\%$ reduction. After the match-score calibration of Eq.~\eqref{eq:macro_match}, the correct routine also ranks first for the report query; a purely dense hashed-vector score did not separate the two routines reliably.
+
+\subsubsection{Async Worker Overhead}
+Indexing 30 trajectories took a median of 4.96 ms per call with the queue disabled and 5.22 ms with it enabled; the queue enqueued 30 jobs and made no model call on the hot path. The 0.26 ms difference is within run-to-run noise and SQLite contention, so the durable queue adds no material indexing penalty in this workload.
+
+\subsubsection{Controlled Multi-Agent-Style Harnesses}
+Two dependency-free harnesses isolate cross-session transfer; neither is an official SWE-bench or GAIA score.
 
 \begin{table}[!t]
-\caption{Consolidated Empirical Performance Metrics: Baseline vs.\ MATP Distilled Memory Buffer\label{tab:metrics_summary}}
+\caption{Controlled Transfer Harnesses (Local Simulations)\label{tab:transfer}}
+\centering
+{\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Suite} & \textbf{Baseline} & \textbf{MATP} \\
+\midrule
+\texttt{mini\_swe.py}: 10 unseen repairs, scripted fixer & 20.0\% solved & \textbf{100.0\% solved} \\
+\quad retrieval accuracy & --- & \textbf{100.0\%} \\
+\texttt{gaia\_lite.py}: 6 multi-hop questions & 83.3\% correct & \textbf{100.0\% correct} \\
+\quad stale answers on 2 superseded-fact traps & 1/2 & \textbf{0/2} \\
+\quad supporting-fact recall & 100.0\% & 100.0\% \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+In \texttt{mini\_swe.py}, one solved example per bug type is stored, then ten unseen repair tasks with different literals are attempted. A cold heuristic always applies the most common repair and solves 2/10; retrieving the top-1 stored repair rule with MATP solves 10/10, with 10/10 correct retrievals, each validated by running the repaired module's tests in a subprocess. In \texttt{gaia\_lite.py}, six local multi-hop questions require two supporting observations; two questions include a superseded fact. MATP answers 6/6 versus 5/6 for a naive top-4 raw store, and returns the stale value on 0/2 traps versus 1/2.
+
+\subsubsection{Consolidated Performance Metrics Scorecard}
+Table~\ref{tab:metrics_summary} summarises the measured Contribution~2 results against baseline memory approaches. The engine removes 92.6\% of the active token footprint ($13.5\times$) while retaining the complete 30-turn history, preserving 88.0\% of key facts at an equal token budget, and labelling all 24 causal-validity nodes correctly.
+
+\begin{table}[!t]
+\caption{Consolidated Measured Metrics: Baseline vs.\ MATP Distilled Memory Buffer\label{tab:metrics_summary}}
 \centering
 {\footnotesize
 \begin{tabular}{lccc}
 \toprule
 \textbf{Metric} & \textbf{Baseline (Raw/FIFO)} & \textbf{MATP Buffer} & \textbf{Advantage} \\
 \midrule
-Mean Tokens / Call      & 2,109 tokens & \textbf{131 tokens} & \textbf{93.8\% (16.1$\times$)} \\
-Tokens (30 Turns)       & 63,276 tokens & \textbf{3,940 tokens} & \textbf{Fits in $<$4k} \\
+Mean Tokens / Call      & 2,037 tokens & \textbf{151 tokens} & \textbf{92.6\% (13.5$\times$)} \\
+Tokens (30 Turns)       & 61,122 tokens & \textbf{4,524 tokens} & \textbf{13.5$\times$ smaller} \\
 History Retention       & 10\% in FIFO(3) & \textbf{100\% Retained} & \textbf{0\% Forgetting} \\
-Key Fact Recall         & 65.0\% & \textbf{100.0\%} & \textbf{100\% Retained} \\
-Precision@1 ($P@1$)     & 60.0\% & \textbf{90.0\%} & \textbf{+30.0\% Boost} \\
-Precision@3 ($P@3$)     & 60.0\% & \textbf{80.0\%} & \textbf{+20.0\% Boost} \\
-Scan Latency ($N=30$)   & 1.38 ms & \textbf{2.46 ms} & \textbf{CPU / 0 network} \\
-Boilerplate Filtered    & 0\% (All Kept) & \textbf{86.3\%--95.8\%} & \textbf{High SNR} \\
+Key Fact Recall (equal budget) & 37.3\% & \textbf{88.0\%} & \textbf{+50.7 pts} \\
+Domain P@1              & 60.0\% & \textbf{100.0\%} & \textbf{+40.0 pts} \\
+Strict P@1 / P@3        & 20.0\% / 60.0\% & \textbf{50.0\% / 80.0\%} & \textbf{+30 / +20 pts} \\
+Scan Latency ($N=30$)   & 1.48 ms & 4.68 ms & CPU, no network \\
+Causal validity labels  & --- & \textbf{24/24} & \textbf{100\% accuracy} \\
+Held-out macro replay   & --- & \textbf{100\% / 100\%} & sequence / binding \\
 \bottomrule
 \end{tabular}
 }
@@ -491,26 +566,28 @@ The policy engine was evaluated on an internal benchmark covering embedding qual
 
 \textbf{Hard suppression of stale state.} The piecewise condition in Eq.~\eqref{eq:matp_score} provides a formal guarantee: no superseded version of a resource can appear in retrieval results when exclude\_stale=True. This is qualitatively different from recency-biased approaches that merely \emph{downrank} stale items, which can still surface them under high semantic similarity.
 
-\textbf{Zero infrastructure.} The system runs entirely locally: stdio MCP transport, local FAISS index, and local Nomic embeddings. This enables deployment in air-gapped environments and eliminates network latency from the agent deliberation loop.
+\textbf{Zero infrastructure.} All components run locally: stdio MCP transport, SQLite storage, deterministic subword embeddings, and an optional local Ollama worker. No hosted service is required.
 
 \textbf{Logical clock vs.\ wall time.} Using a logical clock rather than timestamps decouples the memory system from real-time concerns and makes behaviour fully deterministic and reproducible across test runs.
 
 \subsection{Limitations and Future Work}
 
-\textbf{Dependent leak.} As demonstrated in the schema refactor benchmark, MATP suppresses only direct versioning staleness. Cross-resource dependencies (e.g., an ORM model that references a superseded schema) are not currently handled. The endsem plan addresses this with a cross-resource dependency graph that propagates invalidation to dependent resource\_ids.
+\textbf{Cross-resource dependencies.} Contribution~2's causal DAG propagates invalidation through explicit \texttt{parent\_step\_id} links and resource reads/writes, so a dependent step is marked suspect when its producer becomes stale. The residual limitation is that dependency edges are inferred heuristically from tool parameters and declared parent pointers; an ORM model that implicitly embeds a schema without either signal would not be linked. Scope must also be supplied by the caller: cross-task isolation depends on a distinct \texttt{scope\_id} per workspace snapshot.
 
-\textbf{Fixed $\lambda$.} The temporal decay parameter is currently a global constant. Different task types and subgoal horizons warrant different decay rates. Adaptive $\lambda$ learning per task is planned for the endsem extension.
+\textbf{Fixed decay.} The temporal decay parameter and the DAG taint decay are global constants. Different task types and subgoal horizons warrant different rates; adaptive decay is not implemented.
 
-\textbf{Scaling beyond FAISS flat index.} The current IndexFlatIP performs exact search with $O(N)$ scan. For $N > 10^5$ items, approximate nearest-neighbour (ANN) indices or SQLite-vec virtual tables will be required.
+\textbf{Linear scan latency.} SQLite retrieval is exact and $O(N)$; at $N=240$ it measures 43.8 ms versus 10.0 ms for a raw scan. For $N > 10^5$ trajectories an ANN index or a \texttt{sqlite-vec} virtual table would be required.
 
-\textbf{Agent integration.} The current evaluation uses offline benchmarks. End-to-end integration with a live LLM agent loop (with A/B comparison of memory strategies) is planned for the endsem evaluation.
+\textbf{Offline evaluation.} The evaluation is offline and scripted. End-to-end integration with a live LLM agent loop, with an A/B comparison of memory strategies, is not reported here.
 
-\textbf{Hierarchical macro-actions and async neural workers.} For Contribution~2, clustering recurrent multi-step subroutines into single composite macro-actions and deploying an asynchronous background worker using local deep models (e.g., Ollama / Qwen-2.5) for neural summarization are planned for the endsem extension.
+\textbf{Local, gated analogues.} The GAIA dataset is gated and no Docker-based SWE-bench harness was available, so \texttt{gaia\_lite.py} and \texttt{mini\_swe.py} are clearly labelled local controlled simulations. They isolate the memory contribution but are not leaderboard scores.
+
+\textbf{Dependency-free macro matching.} The dense component is a hashed n-gram vectorizer, so a lexical prior is used deliberately to suppress hash-collision noise (Eq.~\eqref{eq:macro_match}). A trained embedding model would likely improve semantic matching. The asynchronous worker is implemented and tested with a fake client, but end-to-end generation quality with a running Qwen2.5 daemon is not measured.
 
 % ============================================================
 \section{Conclusion}
 
-We presented MATP, a temporal and state-aware semantic memory buffer for agentic LLMs, comprising three contributions: a versioned vector store with hard-suppression retrieval scoring, a background abstraction engine achieving over 93\% token compression (up to $21.7\times$) with 100\% fact retention and episodic knowledge graph synthesis, and a Bayesian policy ranking engine. MATP eliminates the fundamental tension between memory completeness and context freshness: the buffer retains full history while the retrieval function guarantees that superseded state is never returned. All components are deployed as a single MCP server with local-only inference, making the system immediately deployable without external service dependencies.
+We presented MATP, a temporal and state-aware semantic memory buffer for agentic LLMs, comprising three contributions: a versioned vector store with hard-suppression retrieval scoring, a background abstraction engine combining SQLite durability, cross-session causal-DAG invalidation, hierarchical macro-action distillation and an asynchronous local-model worker, and a Bayesian policy ranking engine. The abstraction engine compresses a 30-turn workload by 92.6\% ($13.5\times$), retains 88.0\% of key facts at an equal token budget, labels all 24 replay-validity nodes correctly, and replays held-out macros with 100\% sequence and binding accuracy. MATP thus narrows the tension between memory completeness and context freshness: the buffer retains full history while retrieval weights current state above superseded, stale or suspect state, and the distilled representation stays within a standard context budget. The full system is deployed as a local 16-tool MCP server.
 
 \section*{Acknowledgments}
 The authors thank the Department of Information Technology, NITK Surathkal, for computing resources, and acknowledge the FastMCP framework and FAISS library which underpin the implementation.

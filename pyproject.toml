@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "matp"
+version = "0.2.0"
+description = "MATP Contribution 2: Background Abstraction, Causal DAG, Macro Distillation and Async Neural Worker"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+bench = ["tiktoken>=0.7", "datasets>=2.19", "huggingface_hub>=0.23", "swebench>=3.0"]
+neural = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["matp*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]

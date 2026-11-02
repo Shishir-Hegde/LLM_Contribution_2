@@ -1,146 +1,175 @@
-"""
-Interactive Working POC Demo for MATP Contribution 2
-Author: Shishir Hegde (NITK Surathkal)
+"""Interactive POC demo for MATP Contribution 2 (endsem).
 
 Demonstrates:
-1. Ingesting raw verbose tool outputs (SQL, Traceback, CLI/Pytest).
-2. Background synthesis into compact structured tuples G = (g, t, p, s, sigma) and (S, R, O) triples.
-3. Zero-dependency embedding & vector indexing via matp_index_trajectory.
-4. Hybrid semantic retrieval (dense cosine + sparse entity matching) with tool & entity filters.
-5. Episodic Knowledge Graph synthesis and cross-step entity linking.
-6. Ultra-compact working memory session summary generation for LLM agents.
+1. Distillation + persistent indexing (SQL, traceback, tests).
+2. Cross-session causal invalidation and validity-aware retrieval.
+3. Hierarchical macro-action mining, matching and expansion.
+4. Async worker status (queue is non-blocking).
 """
 
-import sys
+from __future__ import annotations
+
 import json
+import os
+import re
+
 from src.matp.memory_store import MATPMemoryStore
 
-def run_demo():
-    print("=" * 80)
-    print("  MATP: Memory-Augmented Tool Policy -- Contribution 2 Working POC Demo")
-    print("  Author: Shishir Hegde (Department of Information Technology, NITK)")
-    print("=" * 80)
-    
-    store = MATPMemoryStore(persistence_file="data/matp.memory.json", embedder_dim=256)
-    store.trajectories.clear()
-    store.embeddings.clear()
+DB = os.environ.get("MATP_DEMO_DB", "data/matp_demo.db")
 
-    # Step 1: SQL execution
-    print("\n[Step 1] Ingesting Tool Execution: Postgres SQL Query (Data Retrieval)")
-    raw_sql = json.dumps([
-        {"user_id": 101, "username": "alice", "email": "alice@nitk.edu", "role": "admin", "status": "active"},
-        {"user_id": 102, "username": "bob", "email": "bob@nitk.edu", "role": "dev", "status": "active"},
-        {"user_id": 103, "username": "charlie", "email": "charlie@nitk.edu", "role": "tester", "status": "inactive"}
-    ] * 10, indent=2)
-    
-    t1 = store.matp_index_trajectory(
+
+def routine_raw_output(tool: str, step_id: int) -> str:
+    """Realistic verbose output so the demo's compression numbers are honest."""
+    if tool == "read_file":
+        return "\n".join(
+            f"line_{i}: setting_{i}: value_{i}_metadata_padding_for_a_long_system_file"
+            for i in range(60)
+        )
+    if tool == "pytest":
+        return "collected 12 items\n" + "".join(
+            f"tests/test_suite.py::test_case_{i} PASSED [ {i * 8:3d}%]\n" for i in range(12)
+        ) + "12 passed in 0.41s\n"
+    if tool == "git_command":
+        return "On branch main\nChanges not staged for commit:\n" + "".join(
+            f"\tmodified:   src/module_{i}.py\n" for i in range(20)
+        )
+    if tool == "sql_query":
+        return json.dumps([{"user_id": i, "email": f"user_{i}@nitk.edu"} for i in range(25)], indent=2)
+    return f"step {step_id} completed\n" + ("output padding line\n" * 40)
+
+
+def banner(title: str) -> None:
+    print("\n" + "=" * 78)
+    print(f"  {title}")
+    print("=" * 78)
+
+
+def run_demo() -> None:
+    store = MATPMemoryStore(db_path=DB, session_id="refactor-A", scope_id="workspace", enable_queue=False)
+    store.clear()
+
+    banner("1. DISTILLATION + CAUSAL INDEXING")
+    raw_sql = json.dumps(
+        [{"user_id": 100 + i, "username": f"user_{i}", "email": f"user_{i}@nitk.edu", "role": "engineer"} for i in range(40)],
+        indent=2,
+    )
+    first = store.matp_index_trajectory(
         step_id=1,
-        sub_goal="Query active engineers and role privileges from Postgres database",
+        sub_goal="Read active users table",
         tool_name="sql_query",
-        parameters={"query": "SELECT user_id, username, email, role, status FROM users;", "table": "users"},
+        parameters={"query": "SELECT user_id, username, email FROM users", "table": "users"},
         status="SUCCESS",
-        raw_output=raw_sql
+        raw_output=raw_sql,
     )
-    print(f"  --> Raw Size:       {t1.raw_token_count_est} tokens ({len(raw_sql)} chars)")
-    print(f"  --> Distilled Size: {t1.distilled_token_count_est} tokens ({len(t1.to_compact_text())} chars)")
-    print(f"  --> Compression:    {(1.0 - t1.distilled_token_count_est/t1.raw_token_count_est)*100:.1f}% reduction")
-    print(f"  --> Entities:       {t1.entities}")
-    print(f"  --> Triples (S,R,O):{t1.triples}")
-    print(f"  --> Stored Tuple G: {t1.to_compact_text()}")
+    print(f"  raw={first.raw_token_count_est} tokens  distilled={first.distilled_token_count_est} tokens")
+    print(f"  entities={first.entities}")
+    print(f"  triples={first.triples[:3]}")
 
-    # Step 2: Runtime traceback failure
-    print("\n[Step 2] Ingesting Tool Execution: Python Migration Script Crash (Failure)")
-    raw_tb = (
-        "Traceback (most recent call last):\n"
-        '  File "/app/scripts/migrate.py", line 42, in <module>\n'
-        '    engine.connect()\n'
-        "sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at '127.0.0.1', port 5432 failed: Connection refused.\n"
-        "Is the server running on that host and accepting TCP/IP connections?\n" * 6
-    )
-    t2 = store.matp_index_trajectory(
+    store.matp_index_trajectory(
         step_id=2,
-        sub_goal="Run database migration scripts on port 5432",
-        tool_name="python_interpreter",
-        parameters={"script": "scripts/migrate.py"},
-        status="FAILURE",
-        raw_output=raw_tb
-    )
-    print(f"  --> Raw Size:       {t2.raw_token_count_est} tokens")
-    print(f"  --> Distilled Size: {t2.distilled_token_count_est} tokens")
-    print(f"  --> Compression:    {(1.0 - t2.distilled_token_count_est/t2.raw_token_count_est)*100:.1f}% reduction")
-    print(f"  --> Entities:       {t2.entities}")
-    print(f"  --> Triples (S,R,O):{t2.triples}")
-    print(f"  --> Stored Tuple G: {t2.to_compact_text()}")
-
-    # Step 3: Error Remediation & Test Runner
-    print("\n[Step 3] Ingesting Tool Execution: Database Service Restart & Pytest Suite (Remediation)")
-    raw_test = (
-        "============================= test session starts ==============================\n"
-        "platform linux -- Python 3.11.8, pytest-7.4.3, pluggy-1.3.0\n"
-        "rootdir: /app, configfile: pytest.ini\n"
-        "collected 12 items\n\n"
-        "tests/test_db.py ............                                            [100%]\n"
-        "============================== 12 passed in 0.45s =============================="
-    )
-    t3 = store.matp_index_trajectory(
-        step_id=3,
-        sub_goal="Start Postgres daemon and verify database integration tests pass",
-        tool_name="pytest",
-        parameters={"cmd": "pytest tests/test_db.py"},
+        sub_goal="Migrate users table: add oauth_subject",
+        tool_name="sql_query",
+        parameters={"query": "ALTER TABLE users ADD COLUMN oauth_subject TEXT", "table": "users"},
         status="SUCCESS",
-        raw_output=raw_test,
-        parent_step_id=2  # Explicit causal link: resolves Step 2 error
+        raw_output="ALTER TABLE",
     )
-    print(f"  --> Raw Size:       {t3.raw_token_count_est} tokens")
-    print(f"  --> Distilled Size: {t3.distilled_token_count_est} tokens")
-    print(f"  --> Compression:    {(1.0 - t3.distilled_token_count_est/t3.raw_token_count_est)*100:.1f}% reduction")
-    print(f"  --> Parent Step:    Step {t3.parent_step_id} (Causal Error Recovery)")
-    print(f"  --> Triples (S,R,O):{t3.triples}")
-    print(f"  --> Stored Tuple G: {t3.to_compact_text()}")
+    store.matp_index_trajectory(
+        step_id=3,
+        sub_goal="Run user integration tests",
+        tool_name="pytest",
+        parameters={"path": "tests/test_users.py"},
+        status="SUCCESS",
+        raw_output="12 passed in 0.45s",
+        parent_step_id=2,
+    )
 
-    # Step 4: Hybrid Querying & Multi-Modal Retrieval
-    print("\n" + "=" * 80)
-    print("  HYBRID SEMANTIC RETRIEVAL (Dense Cosine + Sparse Entity Matching)")
-    print("=" * 80)
-    
-    test_cases = [
-        {"desc": "Semantic Search", "query": "Find the database migration failure exception and connection error", "kwargs": {}},
-        {"desc": "Tool-Filtered Query", "query": "database execution results", "kwargs": {"filter_tool": "sql_query"}},
-        {"desc": "Entity-Constrained Query", "query": "table user columns", "kwargs": {"filter_entity": "users"}},
+    banner("2. CROSS-SESSION INVALIDATION")
+    store.new_session("refactor-B", "workspace")
+    store.matp_index_trajectory(
+        step_id=1,
+        sub_goal="Re-read users after migration",
+        tool_name="sql_query",
+        parameters={"query": "SELECT user_id, oauth_subject FROM users", "table": "users"},
+        status="SUCCESS",
+        raw_output=json.dumps([{"user_id": 1, "oauth_subject": "sub_1"}] * 10),
+    )
+    store.matp_index_trajectory(
+        step_id=2,
+        sub_goal="Add email index to users",
+        tool_name="sql_query",
+        parameters={"query": "CREATE INDEX idx_users_email ON users(email)", "table": "users"},
+        status="SUCCESS",
+        raw_output="CREATE INDEX",
+    )
+    # Now the original session's read (A:1) and the second read (B:1) are stale.
+    for node in ("refactor-A:1", "refactor-B:1"):
+        lineage = store.get_lineage(node)
+        print(f"  {node}: {lineage['node']['validity']} -> {lineage['node']['reason']}")
+
+    banner("3. VALIDITY-AWARE RETRIEVAL")
+    for stale in (False, True):
+        results = store.matp_query_trajectory("users table columns", top_k=3, include_stale=stale, explain=True)
+        print(f"  include_stale={stale}")
+        for entry, score in results:
+            print(
+                f"    {entry['node_id']:>14}  score={score:.3f}  validity={entry['validity']:<10} "
+                f"weight={entry['explain']['weight']:.2f}  {entry['tuple']['sub_goal'][:40]}"
+            )
+
+    banner("4. HIERARCHICAL MACRO-ACTION MINING")
+    routines = [
+        ("read config/auth.yaml", "read_file", {"path": "config/auth.yaml"}),
+        ("read db/schema.sql", "read_file", {"path": "db/schema.sql"}),
+        ("apply schema migration", "sql_query", {"query": "ALTER TABLE users ADD COLUMN oauth_subject TEXT", "table": "users"}),
+        ("write migration script", "write_file", {"path": "scripts/migrate_v3.py"}),
+        ("run migration tests", "pytest", {"path": "tests/test_migration.py"}),
+        ("read test log", "read_file", {"path": "logs/pytest.log"}),
+        ("patch auth config", "patch_file", {"path": "config/auth.yaml"}),
+        ("re-run auth tests", "pytest", {"path": "tests/test_auth.py"}),
+        ("inspect git status", "git_command", {"command": "git status"}),
+        ("commit migration", "git_command", {"command": "git commit -am migrate"}),
     ]
+    for session_index in range(3):
+        session = f"routine-{session_index}"
+        store.new_session(session, "workspace")
+        for step_id, (goal, tool, params) in enumerate(routines, start=1):
+            params = dict(params)
+            if "path" in params:
+                params["path"] = params["path"].replace("auth", f"auth_v{session_index + 1}")
+            store.matp_index_trajectory(
+                step_id=step_id,
+                sub_goal=f"{goal} [run {session_index}]",
+                tool_name=tool,
+                parameters=params,
+                status="SUCCESS",
+                raw_output=routine_raw_output(tool, step_id),
+            )
+    skills = store.mine_macros(window=10, min_support=3, hierarchical=True)
+    print(f"  learned {len(skills)} skills; stats={store.macro_stats()}")
+    for skill in skills[:5]:
+        print(f"    {skill['skill_id']}  L{skill['level']}  support={skill['support']}  {skill['name']}")
 
-    for tc in test_cases:
-        print(f"\n[Test: {tc['desc']}] Query: \"{tc['query']}\" {tc['kwargs']}")
-        results = store.matp_query_trajectory(tc["query"], top_k=2, **tc["kwargs"])
-        for rank, (res, score) in enumerate(results, 1):
-            tpl = res["tuple"]
-            print(f"  Rank #{rank} (Hybrid Score = {score:.4f}):")
-            print(f"    Step ID: {tpl['step_id']} | Tool: {tpl['tool_name']} | Status: {tpl['status']}")
-            print(f"    Summary: {tpl['output_summary']}")
-            print(f"    Entities: {tpl.get('entities')}")
+    if skills:
+        promoted = [s for s in skills if s.get("status") == "promoted"] or skills
+        match = store.match_macro("migrate the auth schema and run tests", top_k=2)
+        if match:
+            print(f"  best match: {match[0]['name']} (score={match[0]['match_score']})")
+            bindings = {
+                p["name"]: (
+                    re.sub(r"auth_v\d+", "auth_v9", str(p.get("example", "")))
+                    if p.get("type") == "string"
+                    else p.get("example")
+                )
+                for p in match[0].get("params", [])
+            }
+            expanded = store.expand_macro(match[0]["skill_id"], bindings)
+            print(f"  expanded first step: {expanded['steps'][0]}")
 
-    # Step 5: Synthesized Episodic Knowledge Graph
-    print("\n" + "=" * 80)
-    print("  EPISODIC KNOWLEDGE GRAPH SYNTHESIS (S, R, O Relational Network)")
-    print("=" * 80)
-    graph = store.get_knowledge_graph()
-    print(f"  Total Unique Entities (Nodes): {graph['total_nodes']}")
-    print(f"  Total Relational Triples (Edges): {graph['total_edges']}")
-    print(f"  Central Hub Entities: {graph['central_entities']}")
-    print("  Sample Relational Edges:")
-    for edge in graph["edges"][:6]:
-        print(f"    ({edge['subject']}) --[{edge['relation']}]--> ({edge['object']}) [Step {edge['step_id']}]")
+    banner("5. SESSION SUMMARY + WORKER STATUS")
+    print(store.get_session_summary("refactor-A"))
+    print(json.dumps(store.worker_status(), indent=2))
+    print(json.dumps(store.get_stats(), indent=2))
 
-    # Step 6: Session Working Memory Summary
-    print("\n" + "=" * 80)
-    print("  LLM WORKING MEMORY SESSION SNAPSHOT (Zero-Overhead Re-population)")
-    print("=" * 80)
-    print(store.get_session_summary())
-
-    stats = store.get_stats()
-    print("\n" + "=" * 80)
-    print(f"  SUMMARY: {stats['total_entries']} entries | {stats['total_raw_tokens']} raw tokens -> {stats['total_distilled_tokens']} distilled tokens ({stats['compression_ratio_pct']}% saved | {stats['token_reduction_factor']}x reduction)")
-    print("=" * 80)
 
 if __name__ == "__main__":
     run_demo()

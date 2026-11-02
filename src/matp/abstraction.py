@@ -14,6 +14,8 @@ import re
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 
+from .tokenizer import count_tokens, tokenizer_name
+
 @dataclass
 class TrajectoryTuple:
     step_id: int
@@ -57,8 +59,8 @@ class BackgroundAbstractionEngine:
 
     @staticmethod
     def _estimate_tokens(text: str) -> int:
-        """Heuristic token estimation: ~4 chars per token for English/code text."""
-        return max(1, len(text) // 4)
+        """Count tokens with tiktoken when available, else a documented heuristic."""
+        return count_tokens(text)
 
     def abstract_tool_output(
         self,

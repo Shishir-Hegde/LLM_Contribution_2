@@ -1,0 +1,78 @@
+{
+  "dag_invalidation": {
+    "accuracy": 1.0,
+    "correct": 24,
+    "total": 24,
+    "per_class": {
+      "fresh": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 13
+      },
+      "stale": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 7
+      },
+      "suspect": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 3
+      },
+      "superseded": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 1
+      }
+    },
+    "misclassified": {}
+  },
+  "macro_replay": {
+    "skills_mined": 2,
+    "promoted_level2": 2,
+    "heldout": [
+      {
+        "session": "heldout-migrate",
+        "retrieved": true,
+        "correct_routine": true,
+        "tool_sequence_match": 1.0,
+        "binding_accuracy": 1.0,
+        "match_score": 0.6214,
+        "trajectory_tokens": 461,
+        "macro_definition_tokens": 214,
+        "token_reduction_pct": 53.58
+      },
+      {
+        "session": "heldout-report",
+        "retrieved": true,
+        "correct_routine": true,
+        "tool_sequence_match": 1.0,
+        "binding_accuracy": 1.0,
+        "match_score": 0.4851,
+        "trajectory_tokens": 480,
+        "macro_definition_tokens": 226,
+        "token_reduction_pct": 52.92
+      }
+    ],
+    "mean_tool_sequence_match": 1.0,
+    "mean_binding_accuracy": 1.0
+  },
+  "worker_overhead": {
+    "without_queue": {
+      "queue_enabled": false,
+      "median_index_ms": 4.6387,
+      "total_index_ms": 137.7597,
+      "queued_jobs": 0
+    },
+    "with_queue": {
+      "queue_enabled": true,
+      "median_index_ms": 4.4909,
+      "total_index_ms": 141.2801,
+      "queued_jobs": 30
+    }
+  }
+}

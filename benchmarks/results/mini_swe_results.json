@@ -1,0 +1,92 @@
+{
+  "tasks": 10,
+  "cold_solved": 2,
+  "memory_solved": 10,
+  "retrieval_correct": 10,
+  "cold_solve_rate": 20.0,
+  "memory_solve_rate": 100.0,
+  "retrieval_accuracy": 100.0,
+  "records": [
+    {
+      "id": "offbyone_a",
+      "bug_type": "off_by_one",
+      "cold_solved": true,
+      "memory_solved": true,
+      "retrieval_correct": true,
+      "neural_summary": null
+    },
+    {
+      "id": "offbyone_b",
+      "bug_type": "off_by_one",
+      "cold_solved": true,
+      "memory_solved": true,
+      "retrieval_correct": true,
+      "neural_summary": null
+    },
+    {
+      "id": "operator_a",
+      "bug_type": "wrong_operator",
+      "cold_solved": false,
+      "memory_solved": true,
+      "retrieval_correct": true,
+      "neural_summary": null
+    },
+    {
+      "id": "operator_b",
+      "bug_type": "wrong_operator",
+      "cold_solved": false,
+      "memory_solved": true,
+      "retrieval_correct": true,
+      "neural_summary": null
+    },
+    {
+      "id": "constant_a",
+      "bug_type": "wrong_constant",
+      "cold_solved": false,
+      "memory_solved": true,
+      "retrieval_correct": true,
+      "neural_summary": null
+    },
+    {
+      "id": "constant_b",
+      "bug_type": "wrong_constant",
+      "cold_solved": false,
+      "memory_solved": true,
+      "retrieval_correct": true,
+      "neural_summary": null
+    },
+    {
+      "id": "sorted_a",
+      "bug_type": "missing_sorted",
+      "cold_solved": false,
+      "memory_solved": true,
+      "retrieval_correct": true,
+      "neural_summary": null
+    },
+    {
+      "id": "sorted_b",
+      "bug_type": "missing_sorted",
+      "cold_solved": false,
+      "memory_solved": true,
+      "retrieval_correct": true,
+      "neural_summary": null
+    },
+    {
+      "id": "slice_a",
+      "bug_type": "wrong_slice",
+      "cold_solved": false,
+      "memory_solved": true,
+      "retrieval_correct": true,
+      "neural_summary": null
+    },
+    {
+      "id": "slice_b",
+      "bug_type": "wrong_slice",
+      "cold_solved": false,
+      "memory_solved": true,
+      "retrieval_correct": true,
+      "neural_summary": null
+    }
+  ],
+  "note": "Controlled scripted-fixer simulation; not an official SWE-bench evaluation."
+}

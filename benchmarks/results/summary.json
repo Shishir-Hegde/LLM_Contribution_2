@@ -1,0 +1,354 @@
+{
+  "started_at": 1793610357.942887,
+  "root": "C:\\Users\\shish\\Documents\\NITK projects\\LLMs",
+  "compression_retrieval": {
+    "tokenizer": "heuristic(words+punct)",
+    "dataset_size": 30,
+    "query_count": 10,
+    "stats": {
+      "total_entries": 30,
+      "total_raw_tokens": 61122,
+      "total_distilled_tokens": 4524,
+      "compression_ratio_pct": 92.6,
+      "token_reduction_factor": 13.51,
+      "validity": {
+        "fresh": 30
+      },
+      "queue": {
+        "counts": {},
+        "queued": 0,
+        "running": 0,
+        "done": 0,
+        "failed": 0,
+        "oldest_queued_age_s": 0.0
+      }
+    },
+    "domain_stats": {
+      "SQL Database": {
+        "avg_raw": 3441.0,
+        "avg_distilled": 234.0,
+        "compression_pct": 93.2
+      },
+      "Runtime Traceback": {
+        "avg_raw": 1808.0,
+        "avg_distilled": 107.0,
+        "compression_pct": 94.1
+      },
+      "REST API Response": {
+        "avg_raw": 1416.0,
+        "avg_distilled": 178.0,
+        "compression_pct": 87.4
+      },
+      "File System / Bash": {
+        "avg_raw": 2185.0,
+        "avg_distilled": 131.0,
+        "compression_pct": 94.0
+      },
+      "Doc / PDF Parsing": {
+        "avg_raw": 1337.0,
+        "avg_distilled": 104.0,
+        "compression_pct": 92.2
+      }
+    },
+    "retrieval": {
+      "strict_p1_matp": 50.0,
+      "strict_p1_raw": 20.0,
+      "strict_p3_matp": 80.0,
+      "strict_p3_raw": 60.0,
+      "domain_p1_matp": 100.0,
+      "domain_p1_raw": 60.0,
+      "domain_p3_matp": 100.0,
+      "domain_p3_raw": 60.0,
+      "fact_retention_matp": 88.0,
+      "fact_retention_raw": 37.3,
+      "median_latency_ms_matp": 4.6795,
+      "median_latency_ms_raw": 1.4842
+    },
+    "latency_scaling": {
+      "sizes": [
+        30,
+        60,
+        120,
+        240
+      ],
+      "matp_ms": [
+        3.7905,
+        10.0872,
+        18.6929,
+        43.8311
+      ],
+      "raw_ms": [
+        1.1212,
+        2.5741,
+        4.9782,
+        10.0149
+      ]
+    },
+    "plots": [
+      "C:\\Users\\shish\\Documents\\NITK projects\\LLMs\\benchmarks\\results\\fig1_token_compression.png",
+      "C:\\Users\\shish\\Documents\\NITK projects\\LLMs\\benchmarks\\results\\fig2_context_growth.png",
+      "C:\\Users\\shish\\Documents\\NITK projects\\LLMs\\benchmarks\\results\\fig3_retrieval_and_latency.png",
+      "C:\\Users\\shish\\Documents\\NITK projects\\LLMs\\benchmarks\\results\\fig4_token_mass.png"
+    ],
+    "results_file": "C:\\Users\\shish\\Documents\\NITK projects\\LLMs\\benchmarks\\results\\benchmark_results.json"
+  },
+  "replay": {
+    "dag_invalidation": {
+      "accuracy": 1.0,
+      "correct": 24,
+      "total": 24,
+      "per_class": {
+        "fresh": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 13
+        },
+        "stale": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 7
+        },
+        "suspect": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 3
+        },
+        "superseded": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 1
+        }
+      },
+      "misclassified": {}
+    },
+    "macro_replay": {
+      "skills_mined": 2,
+      "promoted_level2": 2,
+      "heldout": [
+        {
+          "session": "heldout-migrate",
+          "retrieved": true,
+          "correct_routine": true,
+          "tool_sequence_match": 1.0,
+          "binding_accuracy": 1.0,
+          "match_score": 0.6214,
+          "trajectory_tokens": 461,
+          "macro_definition_tokens": 214,
+          "token_reduction_pct": 53.58
+        },
+        {
+          "session": "heldout-report",
+          "retrieved": true,
+          "correct_routine": true,
+          "tool_sequence_match": 1.0,
+          "binding_accuracy": 1.0,
+          "match_score": 0.4851,
+          "trajectory_tokens": 480,
+          "macro_definition_tokens": 226,
+          "token_reduction_pct": 52.92
+        }
+      ],
+      "mean_tool_sequence_match": 1.0,
+      "mean_binding_accuracy": 1.0
+    },
+    "worker_overhead": {
+      "without_queue": {
+        "queue_enabled": false,
+        "median_index_ms": 4.9599,
+        "total_index_ms": 160.183,
+        "queued_jobs": 0
+      },
+      "with_queue": {
+        "queue_enabled": true,
+        "median_index_ms": 5.2196,
+        "total_index_ms": 152.6177,
+        "queued_jobs": 30
+      }
+    }
+  },
+  "mini_swe": {
+    "tasks": 10,
+    "cold_solved": 2,
+    "memory_solved": 10,
+    "retrieval_correct": 10,
+    "cold_solve_rate": 20.0,
+    "memory_solve_rate": 100.0,
+    "retrieval_accuracy": 100.0,
+    "records": [
+      {
+        "id": "offbyone_a",
+        "bug_type": "off_by_one",
+        "cold_solved": true,
+        "memory_solved": true,
+        "retrieval_correct": true,
+        "neural_summary": null
+      },
+      {
+        "id": "offbyone_b",
+        "bug_type": "off_by_one",
+        "cold_solved": true,
+        "memory_solved": true,
+        "retrieval_correct": true,
+        "neural_summary": null
+      },
+      {
+        "id": "operator_a",
+        "bug_type": "wrong_operator",
+        "cold_solved": false,
+        "memory_solved": true,
+        "retrieval_correct": true,
+        "neural_summary": null
+      },
+      {
+        "id": "operator_b",
+        "bug_type": "wrong_operator",
+        "cold_solved": false,
+        "memory_solved": true,
+        "retrieval_correct": true,
+        "neural_summary": null
+      },
+      {
+        "id": "constant_a",
+        "bug_type": "wrong_constant",
+        "cold_solved": false,
+        "memory_solved": true,
+        "retrieval_correct": true,
+        "neural_summary": null
+      },
+      {
+        "id": "constant_b",
+        "bug_type": "wrong_constant",
+        "cold_solved": false,
+        "memory_solved": true,
+        "retrieval_correct": true,
+        "neural_summary": null
+      },
+      {
+        "id": "sorted_a",
+        "bug_type": "missing_sorted",
+        "cold_solved": false,
+        "memory_solved": true,
+        "retrieval_correct": true,
+        "neural_summary": null
+      },
+      {
+        "id": "sorted_b",
+        "bug_type": "missing_sorted",
+        "cold_solved": false,
+        "memory_solved": true,
+        "retrieval_correct": true,
+        "neural_summary": null
+      },
+      {
+        "id": "slice_a",
+        "bug_type": "wrong_slice",
+        "cold_solved": false,
+        "memory_solved": true,
+        "retrieval_correct": true,
+        "neural_summary": null
+      },
+      {
+        "id": "slice_b",
+        "bug_type": "wrong_slice",
+        "cold_solved": false,
+        "memory_solved": true,
+        "retrieval_correct": true,
+        "neural_summary": null
+      }
+    ],
+    "note": "Controlled scripted-fixer simulation; not an official SWE-bench evaluation."
+  },
+  "gaia_lite": {
+    "questions": 6,
+    "matp_correct": 6,
+    "naive_correct": 5,
+    "matp_accuracy": 100.0,
+    "naive_accuracy": 83.3,
+    "mean_matp_support_recall": 100.0,
+    "mean_naive_support_recall": 100.0,
+    "stale_questions": 2,
+    "stale_answers_naive": 1,
+    "stale_answers_matp": 0,
+    "records": [
+      {
+        "id": "q_hq",
+        "question": "Where is the department that owns Project Falcon headquartered?",
+        "expected": "Surathkal",
+        "matp_answer": "Surathkal",
+        "naive_answer": "Surathkal",
+        "matp_correct": true,
+        "naive_correct": true,
+        "matp_support_recall": 1.0,
+        "naive_support_recall": 1.0,
+        "stale_expected": null
+      },
+      {
+        "id": "q_cluster",
+        "question": "Which compute cluster does the team that maintains Atlas use?",
+        "expected": "Vega",
+        "matp_answer": "Vega",
+        "naive_answer": "Vega",
+        "matp_correct": true,
+        "naive_correct": true,
+        "matp_support_recall": 1.0,
+        "naive_support_recall": 1.0,
+        "stale_expected": null
+      },
+      {
+        "id": "q_region",
+        "question": "Which region hosts the database used by the analytics dashboard?",
+        "expected": "Mumbai",
+        "matp_answer": "Mumbai",
+        "naive_answer": "Mumbai",
+        "matp_correct": true,
+        "naive_correct": true,
+        "matp_support_recall": 1.0,
+        "naive_support_recall": 1.0,
+        "stale_expected": null
+      },
+      {
+        "id": "q_tls",
+        "question": "What TLS version does the gateway that fronts the mobile app require?",
+        "expected": "TLS 1.3",
+        "matp_answer": "TLS 1.3",
+        "naive_answer": "TLS 1.3",
+        "matp_correct": true,
+        "naive_correct": true,
+        "matp_support_recall": 1.0,
+        "naive_support_recall": 1.0,
+        "stale_expected": null
+      },
+      {
+        "id": "q_key",
+        "question": "What is the current API key for Project Falcon?",
+        "expected": "KEY-NEW",
+        "matp_answer": "KEY-NEW",
+        "naive_answer": "KEY-NEW",
+        "matp_correct": true,
+        "naive_correct": true,
+        "matp_support_recall": 1.0,
+        "naive_support_recall": 1.0,
+        "stale_expected": "KEY-OLD"
+      },
+      {
+        "id": "q_retry",
+        "question": "What is the recommended retry limit for the payments service?",
+        "expected": "8",
+        "matp_answer": "8",
+        "naive_answer": "5",
+        "matp_correct": true,
+        "naive_correct": false,
+        "matp_support_recall": 1.0,
+        "naive_support_recall": 1.0,
+        "stale_expected": "5"
+      }
+    ],
+    "note": "Local GAIA-style analogue; the real GAIA dataset is gated and not bundled."
+  },
+  "finished_at": 1793610375.6357636,
+  "duration_s": 17.69
+}

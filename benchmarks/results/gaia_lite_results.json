@@ -1,0 +1,87 @@
+{
+  "questions": 6,
+  "matp_correct": 6,
+  "naive_correct": 5,
+  "matp_accuracy": 100.0,
+  "naive_accuracy": 83.3,
+  "mean_matp_support_recall": 100.0,
+  "mean_naive_support_recall": 100.0,
+  "stale_questions": 2,
+  "stale_answers_naive": 1,
+  "stale_answers_matp": 0,
+  "records": [
+    {
+      "id": "q_hq",
+      "question": "Where is the department that owns Project Falcon headquartered?",
+      "expected": "Surathkal",
+      "matp_answer": "Surathkal",
+      "naive_answer": "Surathkal",
+      "matp_correct": true,
+      "naive_correct": true,
+      "matp_support_recall": 1.0,
+      "naive_support_recall": 1.0,
+      "stale_expected": null
+    },
+    {
+      "id": "q_cluster",
+      "question": "Which compute cluster does the team that maintains Atlas use?",
+      "expected": "Vega",
+      "matp_answer": "Vega",
+      "naive_answer": "Vega",
+      "matp_correct": true,
+      "naive_correct": true,
+      "matp_support_recall": 1.0,
+      "naive_support_recall": 1.0,
+      "stale_expected": null
+    },
+    {
+      "id": "q_region",
+      "question": "Which region hosts the database used by the analytics dashboard?",
+      "expected": "Mumbai",
+      "matp_answer": "Mumbai",
+      "naive_answer": "Mumbai",
+      "matp_correct": true,
+      "naive_correct": true,
+      "matp_support_recall": 1.0,
+      "naive_support_recall": 1.0,
+      "stale_expected": null
+    },
+    {
+      "id": "q_tls",
+      "question": "What TLS version does the gateway that fronts the mobile app require?",
+      "expected": "TLS 1.3",
+      "matp_answer": "TLS 1.3",
+      "naive_answer": "TLS 1.3",
+      "matp_correct": true,
+      "naive_correct": true,
+      "matp_support_recall": 1.0,
+      "naive_support_recall": 1.0,
+      "stale_expected": null
+    },
+    {
+      "id": "q_key",
+      "question": "What is the current API key for Project Falcon?",
+      "expected": "KEY-NEW",
+      "matp_answer": "KEY-NEW",
+      "naive_answer": "KEY-NEW",
+      "matp_correct": true,
+      "naive_correct": true,
+      "matp_support_recall": 1.0,
+      "naive_support_recall": 1.0,
+      "stale_expected": "KEY-OLD"
+    },
+    {
+      "id": "q_retry",
+      "question": "What is the recommended retry limit for the payments service?",
+      "expected": "8",
+      "matp_answer": "8",
+      "naive_answer": "5",
+      "matp_correct": true,
+      "naive_correct": false,
+      "matp_support_recall": 1.0,
+      "naive_support_recall": 1.0,
+      "stale_expected": "5"
+    }
+  ],
+  "note": "Local GAIA-style analogue; the real GAIA dataset is gated and not bundled."
+}

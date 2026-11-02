@@ -248,7 +248,8 @@
           \item \textbf{Non-Blocking Ingest:} Hooks directly into post-tool execution loop via \texttt{matp\_index\_trajectory}.
           \item \textbf{Deterministic Vectorization:} Subword $n$-gram hash embedder with term frequency saturation (zero-infra, CPU-local).
           \item \textbf{Episodic Triples Extraction:} Extracts $(S, R, O)$ facts and entity mentions at ingestion.
-          \item \textbf{Single-File Persistence:} Compact JSON store (\texttt{data/matp.memory.json}) enabling fast scans.
+          \item \textbf{SQLite Durability:} WAL-backed store replaces per-index JSON rewrites; legacy JSON imported once.
+          \item \textbf{Causal DAG + Macros:} Soft validity labels and reusable 10-step composite skills.
         \end{itemize}
       \end{block}
     \end{column}
@@ -262,27 +263,26 @@
   \vspace{0.3em}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.48\textwidth}
-      \begin{block}{Objective 1 (Completed for Midsem)}
+      \begin{block}{Objective 1 (Completed at Midsem)}
         \textbf{Atomic Abstraction, Buffer, and Graph Base}
         \begin{itemize}
           \footnotesize
           \item Built domain-specific synthesis for SQL, tracebacks, REST APIs, bash/git/pytest, and documents.
-          \item Implemented deterministic subword embedder and local JSON vector buffer.
+          \item Implemented deterministic subword embedder and local vector buffer.
           \item Synthesized episodic Knowledge Graph with $(S, R, O)$ triples and causal parent tracking.
           \item Implemented hybrid dense-sparse semantic retrieval.
-          \item Exposed 4 tools over stdio JSON-RPC MCP server.
         \end{itemize}
       \end{block}
     \end{column}
     \begin{column}{0.48\textwidth}
-      \begin{block}{Objective 2 (Planned for Endsem / Final Eval)}
-        \textbf{Causal DAG Resolution and Macro Distillation}
+      \begin{block}{Objective 2 (Completed at Endsem)}
+        \textbf{Causal DAG, Macros, Worker, Benchmarks}
         \begin{itemize}
           \footnotesize
-          \item \textbf{Cross-Session Causal DAG:} Propagate invalidation across tool steps and dependent resources.
-          \item \textbf{Hierarchical Macro-Action Distillation:} Cluster 10-step subroutines into reusable composite skills.
-          \item \textbf{Async Neural Background Worker:} Non-blocking daemon using local Ollama/Qwen-2.5 for macro summaries.
-          \item \textbf{Multi-Agent Benchmarks:} Evaluate long-horizon execution on SWE-bench and GAIA.
+          \item \textbf{Cross-Session Causal DAG:} soft \textit{fresh / stale / suspect / superseded} labels, scope isolation, healing, overrides.
+          \item \textbf{Hierarchical Macro Distillation:} canonical signatures, slot binding, support/success promotion and demotion.
+          \item \textbf{Async Neural Worker:} durable SQLite job queue + local Ollama/Qwen-2.5 with JSON-schema output.
+          \item \textbf{Benchmarks:} DAG replay, held-out macro replay, queue overhead, SWE-style and GAIA-style local harnesses.
         \end{itemize}
       \end{block}
     \end{column}
@@ -300,13 +300,13 @@
       \toprule
       Tool Domain & Raw $O_{\mathrm{raw}}$ (Tokens) & Distilled $G$ (Tokens) & Compression Ratio & Factor\\
       \midrule
-      SQL Database & 2,543 & 160 & \textbf{93.7\%} & 15.9$\times$\\
-      Runtime Traceback & 1,614 & 102 & \textbf{93.7\%} & 15.8$\times$\\
-      REST API Response & 1,208 & 166 & \textbf{86.3\%} & 7.3$\times$\\
-      File System / Bash & 3,277 & 139 & \textbf{95.8\%} & 23.6$\times$\\
-      Doc / PDF Parsing & 1,904 & 90 & \textbf{95.3\%} & 21.2$\times$\\
+      SQL Database & 3,441 & 234 & \textbf{93.2\%} & 14.7$\times$\\
+      Runtime Traceback & 1,808 & 107 & \textbf{94.1\%} & 16.9$\times$\\
+      REST API Response & 1,416 & 178 & \textbf{87.4\%} & 8.0$\times$\\
+      File System / Bash & 2,185 & 131 & \textbf{94.0\%} & 16.7$\times$\\
+      Doc / PDF Parsing & 1,337 & 104 & \textbf{92.2\%} & 12.9$\times$\\
       \midrule
-      \textbf{Overall Mean} & \textbf{2,109 / call} & \textbf{131 / call} & \textbf{93.8\%} & \textbf{16.1$\times$ Reduction}\\
+      \textbf{Overall (30 turns)} & \textbf{61,122 total} & \textbf{4,524 total} & \textbf{92.6\%} & \textbf{13.5$\times$ Reduction}\\
       \bottomrule
     \end{tabular}
   \end{table}
@@ -316,8 +316,8 @@
       \begin{block}{Context Growth (30 Turns)}
         \begin{itemize}
           \footnotesize
-          \item \textbf{Unpruned Raw Context:} Explodes to \textbf{63,276 tokens} (exceeds standard 8k context window; severe cost).
-          \item \textbf{MATP Buffer:} Retains full 30-turn history in only \textbf{3,940 tokens} ($<$\,4k budget).
+          \item \textbf{Unpruned Raw Context:} Reaches \textbf{61,122 tokens} (7.5$\times$ an 8k window; severe cost).
+          \item \textbf{MATP Buffer:} Retains full 30-turn history in \textbf{4,524 tokens}, fitting an 8k budget.
         \end{itemize}
       \end{block}
     \end{column}
@@ -325,7 +325,7 @@
       \begin{block}{Catastrophic Forgetting Avoidance}
         \begin{itemize}
           \footnotesize
-          \item \textbf{FIFO(3) Context:} Keeps $\sim$\,6,000 tokens but \textbf{drops 90\% of prior steps}, forgetting early schemas and fixes.
+          \item \textbf{FIFO(3) Context:} Keeps $\sim$\,4,900 tokens but \textbf{drops 90\% of prior steps}, forgetting early schemas and fixes.
           \item \textbf{MATP:} Maintains 100\% complete trajectory history with zero pruning loss.
         \end{itemize}
       \end{block}
@@ -342,10 +342,10 @@
     \footnotesize
     \begin{tabular}{lcccc}
       \toprule
-      Memory Architecture & Precision @ 1 & Precision @ 3 & Key Fact Retention & Scan Latency ($N=30$)\\
+      Memory Architecture & Strict P@1 & Domain P@1 & Key Fact Retention & Latency ($N=30$)\\
       \midrule
-      Naive Raw Log Store & 60.0\% & 60.0\% & 65.0\% & 1.38 ms\\
-      \textbf{MATP Distilled Buffer (Ours)} & \textbf{90.0\%} & \textbf{80.0\%} & \textbf{100.0\%} & \textbf{2.46 ms} (zero network lag)\\
+      Naive Raw Log Store & 20.0\% & 60.0\% & 37.3\% & 1.48 ms\\
+      \textbf{MATP Distilled Buffer (Ours)} & \textbf{50.0\%} & \textbf{100.0\%} & \textbf{88.0\%} & 4.68 ms (zero network)\\
       \bottomrule
     \end{tabular}
   \end{table}
@@ -367,8 +367,8 @@
       \begin{block}{Signal-to-Noise Enhancement}
         \begin{itemize}
           \footnotesize
-          \item Filters 86.3\% -- 95.8\% low-SNR boilerplate (headers, stack frames, OCR noise).
-          \item Vector cosine matching operates strictly on salient tuples, eliminating keyword collisions.
+          \item Filters 87.4\% -- 94.1\% low-SNR boilerplate (headers, stack frames, OCR noise).
+          \item Strict P@3 rises from 60\% to 80\%; policy weights suppress stale rows.
         \end{itemize}
       \end{block}
     \end{column}
@@ -388,48 +388,101 @@
               \item $(\texttt{migrate.py}, \texttt{failed\_with}, \texttt{OperationalError})$
               \item $(\texttt{pytest}, \texttt{tests\_passed}, 12)$
             \end{itemize}
-          \item Identifies central hub entities across turns.
-          \item \textbf{Causal Step Tracking:} \texttt{parent\_step\_id} tags link remediation actions directly to preceding errors.
+          \item 30-turn run: \textbf{90 triples over 26 entities}; hubs are \texttt{users} (deg 30) and \texttt{config/auth\_v2.yaml} (deg 24).
+          \item \textbf{Causal Step Tracking:} \texttt{parent\_step\_id} links remediation actions to preceding errors.
         \end{itemize}
       \end{block}
     \end{column}
     \begin{column}{0.48\textwidth}
-      \begin{block}{Extended MCP Server Tool Suite}
+      \begin{block}{MCP Server: 16 Tools}
         \begin{itemize}
           \footnotesize
-          \item \textbf{\texttt{matp\_index\_trajectory}:} Non-blocking ingestion, distillation, and vector indexing.
-          \item \textbf{\texttt{matp\_query\_trajectory}:} Hybrid search with status, tool, and entity filters.
-          \item \textbf{\texttt{matp\_inspect\_graph}:} Queries synthesized relational triples and entity degrees.
-          \item \textbf{\texttt{matp\_get\_context\_summary}:} Compact $<250$ token working-memory state restoration.
+          \item \textbf{Core (4):} index, query, inspect graph, context summary.
+          \item \textbf{DAG (4):} lineage, resource query, confirm state, recompute validity.
+          \item \textbf{Macros (5):} list, match, expand, mine, record use.
+          \item \textbf{Ops (3):} worker status, enqueue digest, stats.
+          \item \textbf{Coverage:} 45 pytest tests, including real stdio subprocess tests.
         \end{itemize}
       \end{block}
     \end{column}
   \end{columns}
 \end{frame}
 
-\begin{frame}{Status and Roadmap (Contribution 2)}
+\begin{frame}{Causal DAG, Macro Distillation \& Async Worker}
   \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.49\textwidth}
-      \begin{block}{Done (Midsem Deliverable)}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Cross-Session Causal DAG}
         \begin{itemize}
           \footnotesize
-          \item \textbf{Multi-Domain Abstraction:} Distills $(g, t, p, s, \sigma)$ across SQL, tracebacks, APIs, bash, and docs.
-          \item \textbf{Zero-Dependency Vector Store:} Local subword embedder + persistent \texttt{matp.memory.json}.
-          \item \textbf{Hybrid Semantic Search:} Dense cosine + entity matching with tool/entity filters.
-          \item \textbf{Episodic Knowledge Graph:} $(S, R, O)$ triple synthesis and causal parent tracking.
-          \item \textbf{Complete MCP Server:} 4 tools over stdio JSON-RPC.
-          \item \textbf{Validation:} 93.8\% compression, 100\% fact retention, 90\% P@1.
+          \item Tracks read / write / delete access per canonical resource (file, table, API, git, shell).
+          \item Soft validity: \textit{fresh}, \textit{stale}, \textit{suspect}, \textit{superseded}; weights $1$, $0.5\tau$, $\tau$, $0$.
+          \item Transitive taint with per-hop decay $\gamma = 0.8$; scope-isolated workspaces.
+          \item Healing on re-execution and manual overrides.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Macros and Background Worker}
+        \begin{itemize}
+          \footnotesize
+          \item 10-step windows $\rightarrow$ canonical signatures $\rightarrow$ \texttt{difflib} clusters.
+          \item Slot parameterisation; promote at support $\geq 3$, success $\geq 0.8$; demote after 3 failures.
+          \item Durable SQLite job queue; lease recovery, retry, idempotency.
+          \item Local Ollama \texttt{/api/chat} with JSON-schema output; indexing only enqueues.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Benchmark: Replay and Cross-Session Transfer}
+  \begin{table}
+    \centering
+    \footnotesize
+    \begin{tabular}{lcc}
+      \toprule
+      Evaluation & Baseline & MATP\\
+      \midrule
+      DAG validity labels (24 nodes, 9 scenarios) & --- & \textbf{24/24 = 100\%}\\
+      Held-out macro tool sequence (2 routines) & --- & \textbf{100\%}\\
+      Held-out macro slot binding & --- & \textbf{100\%}\\
+      Index latency, queue off / on & 4.96 ms & 5.22 ms\\
+      \midrule
+      \texttt{mini\_swe}: 10 unseen repairs (scripted) & 20\% solved & \textbf{100\% solved}\\
+      \quad repair-rule retrieval & --- & \textbf{100\%}\\
+      \texttt{gaia\_lite}: 6 multi-hop questions & 83.3\% & \textbf{100\%}\\
+      \quad answers using a superseded fact & 1/2 & \textbf{0/2}\\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \vspace{0.2em}
+  {\scriptsize Controlled local analogues with known ground truth, \textbf{not} official SWE-bench or GAIA scores. All numbers are measured by \texttt{benchmarks/run\_all.py}.}
+\end{frame}
+
+\begin{frame}{Status: Endsem Deliverables (Contribution 2)}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.49\textwidth}
+      \begin{block}{Completed}
+        \begin{itemize}
+          \footnotesize
+          \item \textbf{Multi-Domain Abstraction:} $(g, t, p, s, \sigma)$ across SQL, tracebacks, APIs, bash, docs.
+          \item \textbf{SQLite Store:} WAL durability, one-time legacy JSON migration.
+          \item \textbf{Hybrid Search:} dense subword + entity matching, tool/entity/status filters.
+          \item \textbf{Causal DAG:} 24/24 replay labels, scope isolation, healing, overrides.
+          \item \textbf{Macros:} 100\% held-out sequence and binding accuracy.
+          \item \textbf{Async Worker:} durable queue, retry, idempotency, revision guard.
+          \item \textbf{16 MCP Tools:} 45 tests, including real stdio subprocesses.
         \end{itemize}
       \end{block}
     \end{column}
     \begin{column}{0.49\textwidth}
-      \begin{block}{Endsem Plan (Final Evaluation)}
+      \begin{block}{Measured Results and Limits}
         \begin{itemize}
           \footnotesize
-          \item \textbf{Cross-Session Causal DAG:} Invalidation propagation across tool steps and resource dependencies.
-          \item \textbf{Hierarchical Macro-Action Distillation:} Cluster 10-step subroutines into single reusable composite skills.
-          \item \textbf{Async Neural Background Worker:} Non-blocking daemon using local Ollama/Qwen-2.5 for macro summaries.
-          \item \textbf{Agentic Benchmark Suite:} Comprehensive SWE-bench and GAIA evaluations.
+          \item \textbf{92.6\% compression} (13.5$\times$), full 30-turn history in 4,524 tokens.
+          \item \textbf{88.0\% fact retention} at equal budget vs 37.3\% raw.
+          \item \textbf{100\% domain P@1}, strict P@1 50\% vs 20\%.
+          \item \textbf{Limits:} offline evaluation; unsupported gated GAIA / Docker SWE-bench; macro matching uses a hashed embedder + lexical prior; live Qwen2.5 worker quality not measured; retrieval is $O(N)$.
         \end{itemize}
       \end{block}
     \end{column}
@@ -442,10 +495,11 @@
 
 \begin{frame}{Takeaway}
   \begin{itemize}
-    \item \textbf{Retain without bloat (Contrib 2):} Background abstraction achieves $>93\%$ token compression ($16\times$), preserving full history in $<4\mathrm{k}$ tokens with $100\%$ fact retention.
-    \item \textbf{Retrieve without stale (Contrib 1):} Piecewise $R=0$ versioning guarantees no superseded state outranks active resources.
+    \item \textbf{Retain without bloat (Contrib 2):} Background abstraction achieves 92.6\% token compression (13.5$\times$), preserving full 30-turn history in 4,524 tokens with 88\% equal-budget fact retention.
+    \item \textbf{Retrieve without stale (Contrib 2):} Causal DAG labels 24/24 replay nodes correctly; stale and superseded rows are down-weighted or excluded.
+    \item \textbf{Reuse without rediscovery (Contrib 2):} Held-out macros replay with 100\% sequence and slot-binding accuracy.
     \item \textbf{Route with confidence (Contrib 3):} Laplace-smoothed predictive pre-fetching recommends optimal tools and auto-corrects parameters.
-    \item \textbf{Zero external infra:} Local subword vectorizer, single-file JSON persistence, and standard stdio MCP protocol.
+    \item \textbf{Zero external infra:} Local subword vectorizer, SQLite persistence, optional local Ollama worker, and stdio MCP.
   \end{itemize}
   \vspace{1.2em}
   \centering

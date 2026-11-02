@@ -1,169 +1,316 @@
-"""
-MATP Model Context Protocol (MCP) Server for Contribution 2.
-Exposes matp_index_trajectory and matp_query_trajectory over stdio JSON-RPC.
+"""Model Context Protocol server for MATP Contribution 2.
+
+Exposes indexing, validity-aware retrieval, causal lineage, macro skills and
+worker status over stdio JSON-RPC.  The server is intentionally dependency-free.
 """
 
-import sys
+from __future__ import annotations
+
 import json
-from typing import Dict, Any
+import sys
+from typing import Any, Dict, List
+
+from . import config
 from .memory_store import MATPMemoryStore
 
-def handle_rpc():
-    store = MATPMemoryStore(persistence_file="data/matp.memory.json", embedder_dim=256)
-    
-    # Process line-by-line stdio JSON-RPC
+SERVER_INFO = {"name": "matp", "version": "0.2.0"}
+PROTOCOL_VERSION = "2024-11-05"
+
+TOOLS: List[Dict[str, Any]] = [
+    {
+        "name": "matp_index_trajectory",
+        "description": "Distill a raw tool output into a structured tuple, index it and update the causal DAG.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "step_id": {"type": "integer"},
+                "sub_goal": {"type": "string"},
+                "tool_name": {"type": "string"},
+                "parameters": {"type": "object"},
+                "status": {"type": "string"},
+                "raw_output": {"type": "string"},
+                "parent_step_id": {"type": "integer"},
+                "session_id": {"type": "string"},
+                "scope_id": {"type": "string"},
+            },
+            "required": ["step_id", "sub_goal", "tool_name", "parameters", "status", "raw_output"],
+        },
+    },
+    {
+        "name": "matp_query_trajectory",
+        "description": "Hybrid dense+sparse retrieval with status/tool/entity filters and validity weighting.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "top_k": {"type": "integer", "default": 3},
+                "filter_status": {"type": "string"},
+                "filter_tool": {"type": "string"},
+                "filter_entity": {"type": "string"},
+                "include_stale": {"type": "boolean", "default": False},
+                "explain": {"type": "boolean", "default": False},
+                "session_id": {"type": "string"},
+                "scope_id": {"type": "string"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "matp_inspect_graph",
+        "description": "Return the episodic Knowledge Graph (nodes, triples, central entities).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"entity_filter": {"type": "string"}},
+        },
+    },
+    {
+        "name": "matp_get_context_summary",
+        "description": "Return a compact chronological session summary for working-memory recovery.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"session_id": {"type": "string"}, "use_neural": {"type": "boolean", "default": True}},
+        },
+    },
+    {
+        "name": "matp_get_lineage",
+        "description": "Return a node's causal ancestors, descendants, resource accesses and invalidation reason.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"node_id": {"type": "string"}},
+            "required": ["node_id"],
+        },
+    },
+    {
+        "name": "matp_query_dag",
+        "description": "Inspect resource versions and dependent steps for a resource (or list all resources).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"resource_id": {"type": "string"}, "scope_id": {"type": "string"}},
+        },
+    },
+    {
+        "name": "matp_confirm_state",
+        "description": "Mark a node as fresh despite automatic invalidation (manual override).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"node_id": {"type": "string"}, "note": {"type": "string"}},
+            "required": ["node_id"],
+        },
+    },
+    {
+        "name": "matp_list_macros",
+        "description": "List learned composite skills, optionally filtered by status.",
+        "inputSchema": {"type": "object", "properties": {"status": {"type": "string"}}},
+    },
+    {
+        "name": "matp_match_macro",
+        "description": "Rank learned macros for a goal and current state.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"goal": {"type": "string"}, "state": {"type": "object"}, "top_k": {"type": "integer", "default": 5}},
+            "required": ["goal"],
+        },
+    },
+    {
+        "name": "matp_expand_macro",
+        "description": "Expand a macro into concrete tool steps using slot bindings.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"skill_id": {"type": "string"}, "bindings": {"type": "object"}},
+            "required": ["skill_id"],
+        },
+    },
+    {
+        "name": "matp_mine_macros",
+        "description": "Mine recurring 10-step subroutines into reusable composite skills.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "window": {"type": "integer"},
+                "stride": {"type": "integer"},
+                "min_support": {"type": "integer"},
+                "threshold": {"type": "number"},
+                "hierarchical": {"type": "boolean", "default": False},
+            },
+        },
+    },
+    {
+        "name": "matp_record_macro_use",
+        "description": "Record the outcome of an expanded macro and demote repeatedly failing skills.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"skill_id": {"type": "string"}, "success": {"type": "boolean"}},
+            "required": ["skill_id", "success"],
+        },
+    },
+    {
+        "name": "matp_worker_status",
+        "description": "Return queue depth, worker heartbeats and neural mode.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "matp_enqueue_digest",
+        "description": "Queue an asynchronous session digest job for the neural worker.",
+        "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string"}}},
+    },
+    {
+        "name": "matp_recompute_validity",
+        "description": "Run a truth-maintenance pass over a scope (heals re-executed steps).",
+        "inputSchema": {"type": "object", "properties": {"scope_id": {"type": "string"}}},
+    },
+    {
+        "name": "matp_stats",
+        "description": "Return token, validity, queue and macro statistics.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+]
+
+
+def _content(value: Any) -> Dict[str, Any]:
+    return {"content": [{"type": "text", "text": json.dumps(value, indent=2, default=str)}]}
+
+
+def _dispatch(store: MATPMemoryStore, name: str, args: Dict[str, Any]) -> Any:
+    if name == "matp_index_trajectory":
+        distilled = store.matp_index_trajectory(
+            step_id=args.get("step_id", 0),
+            sub_goal=args.get("sub_goal", ""),
+            tool_name=args.get("tool_name", ""),
+            parameters=args.get("parameters", {}),
+            status=args.get("status", "SUCCESS"),
+            raw_output=args.get("raw_output", ""),
+            parent_step_id=args.get("parent_step_id"),
+            session_id=args.get("session_id"),
+            scope_id=args.get("scope_id"),
+        )
+        return distilled.to_dict()
+    if name == "matp_query_trajectory":
+        results = store.matp_query_trajectory(
+            query=args.get("query", ""),
+            top_k=args.get("top_k", 3),
+            filter_status=args.get("filter_status"),
+            filter_tool=args.get("filter_tool"),
+            filter_entity=args.get("filter_entity"),
+            include_stale=args.get("include_stale", False),
+            explain=args.get("explain", False),
+            session_id=args.get("session_id"),
+            scope_id=args.get("scope_id"),
+        )
+        return [{"score": score, "trajectory": entry["tuple"], **{k: v for k, v in entry.items() if k != "tuple"}} for entry, score in results]
+    if name == "matp_inspect_graph":
+        if args.get("entity_filter"):
+            return store.query_knowledge_graph(args["entity_filter"])
+        return store.get_knowledge_graph()
+    if name == "matp_get_context_summary":
+        return store.get_session_summary(args.get("session_id"), use_neural=args.get("use_neural", True))
+    if name == "matp_get_lineage":
+        return store.get_lineage(args.get("node_id", ""))
+    if name == "matp_query_dag":
+        return store.query_dag(args.get("resource_id"), args.get("scope_id"))
+    if name == "matp_confirm_state":
+        return {"ok": store.confirm_state(args.get("node_id", ""), args.get("note", "manual override"))}
+    if name == "matp_list_macros":
+        return store.list_macros(args.get("status"))
+    if name == "matp_match_macro":
+        return store.match_macro(args.get("goal", ""), state=args.get("state"), top_k=args.get("top_k", 5))
+    if name == "matp_expand_macro":
+        return store.expand_macro(args.get("skill_id", ""), args.get("bindings", {}))
+    if name == "matp_mine_macros":
+        return store.mine_macros(
+            window=args.get("window"),
+            stride=args.get("stride"),
+            min_support=args.get("min_support"),
+            threshold=args.get("threshold"),
+            hierarchical=args.get("hierarchical", False),
+        )
+    if name == "matp_record_macro_use":
+        return store.record_macro_use(args.get("skill_id", ""), bool(args.get("success", False)))
+    if name == "matp_worker_status":
+        return store.worker_status()
+    if name == "matp_enqueue_digest":
+        return {"job_id": store.enqueue_digest(args.get("session_id"))}
+    if name == "matp_recompute_validity":
+        return store.recompute_validity(args.get("scope_id"))
+    if name == "matp_stats":
+        return {"memory": store.get_stats(), "macros": store.macro_stats()}
+    raise KeyError(f"Tool '{name}' not found")
+
+
+def handle_rpc(store: MATPMemoryStore) -> None:
     for line in sys.stdin:
         if not line.strip():
             continue
         try:
-            req = json.loads(line)
-            req_id = req.get("id")
-            method = req.get("method")
-            params = req.get("params", {})
+            request = json.loads(line)
+            req_id = request.get("id")
+            method = request.get("method")
+            params = request.get("params", {}) or {}
 
-            if method == "tools/list":
+            if method == "initialize":
                 response = {
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "result": {
-                        "tools": [
-                            {
-                                "name": "matp_index_trajectory",
-                                "description": "Synthesizes and indexes raw tool outputs into compact semantic memory buffer G with relational triples.",
-                                "inputSchema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "step_id": {"type": "integer"},
-                                        "sub_goal": {"type": "string"},
-                                        "tool_name": {"type": "string"},
-                                        "parameters": {"type": "object"},
-                                        "status": {"type": "string"},
-                                        "raw_output": {"type": "string"},
-                                        "parent_step_id": {"type": "integer"}
-                                    },
-                                    "required": ["step_id", "sub_goal", "tool_name", "parameters", "status", "raw_output"]
-                                }
-                            },
-                            {
-                                "name": "matp_query_trajectory",
-                                "description": "Queries historical distilled trajectory records using hybrid dense-sparse semantic retrieval.",
-                                "inputSchema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "query": {"type": "string"},
-                                        "top_k": {"type": "integer", "default": 3},
-                                        "filter_status": {"type": "string"},
-                                        "filter_tool": {"type": "string"},
-                                        "filter_entity": {"type": "string"}
-                                    },
-                                    "required": ["query"]
-                                }
-                            },
-                            {
-                                "name": "matp_inspect_graph",
-                                "description": "Returns the accumulated episodic Knowledge Graph (nodes, directed triples, and key entities) across the session.",
-                                "inputSchema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "entity_filter": {"type": "string", "description": "Optional entity to filter relational triples by"}
-                                    }
-                                }
-                            },
-                            {
-                                "name": "matp_get_context_summary",
-                                "description": "Generates a compact, high-density session trajectory summary (<250 tokens) for LLM working-memory recovery.",
-                                "inputSchema": {
-                                    "type": "object",
-                                    "properties": {}
-                                }
-                            }
-                        ]
-                    }
+                        "protocolVersion": PROTOCOL_VERSION,
+                        "capabilities": {"tools": {}},
+                        "serverInfo": SERVER_INFO,
+                    },
                 }
+            elif method in {"notifications/initialized", "initialized"}:
+                continue
+            elif method == "ping":
+                response = {"jsonrpc": "2.0", "id": req_id, "result": {}}
+            elif method == "tools/list":
+                response = {"jsonrpc": "2.0", "id": req_id, "result": {"tools": TOOLS}}
             elif method == "tools/call":
-                tool_name = params.get("name")
-                args = params.get("arguments", {})
-                if tool_name == "matp_index_trajectory":
-                    distilled = store.matp_index_trajectory(
-                        step_id=args.get("step_id", 0),
-                        sub_goal=args.get("sub_goal", ""),
-                        tool_name=args.get("tool_name", ""),
-                        parameters=args.get("parameters", {}),
-                        status=args.get("status", "SUCCESS"),
-                        raw_output=args.get("raw_output", ""),
-                        parent_step_id=args.get("parent_step_id")
-                    )
+                name = params.get("name")
+                args = params.get("arguments", {}) or {}
+                try:
+                    result = _dispatch(store, name, args)
+                    response = {"jsonrpc": "2.0", "id": req_id, "result": _content(result)}
+                except KeyError as exc:
                     response = {
                         "jsonrpc": "2.0",
                         "id": req_id,
-                        "result": {
-                            "content": [{"type": "text", "text": json.dumps(distilled.to_dict())}]
-                        }
+                        "error": {"code": -32601, "message": str(exc)},
                     }
-                elif tool_name == "matp_query_trajectory":
-                    results = store.matp_query_trajectory(
-                        query=args.get("query", ""),
-                        top_k=args.get("top_k", 3),
-                        filter_status=args.get("filter_status"),
-                        filter_tool=args.get("filter_tool"),
-                        filter_entity=args.get("filter_entity")
-                    )
-                    formatted = [
-                        {"score": s, "trajectory": r["tuple"]}
-                        for r, s in results
-                    ]
+                except Exception as exc:  # tool-level failure
                     response = {
                         "jsonrpc": "2.0",
                         "id": req_id,
-                        "result": {
-                            "content": [{"type": "text", "text": json.dumps(formatted, indent=2)}]
-                        }
-                    }
-                elif tool_name == "matp_inspect_graph":
-                    ent_filter = args.get("entity_filter")
-                    if ent_filter:
-                        graph_data = store.query_knowledge_graph(ent_filter)
-                    else:
-                        graph_data = store.get_knowledge_graph()
-                    response = {
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "result": {
-                            "content": [{"type": "text", "text": json.dumps(graph_data, indent=2)}]
-                        }
-                    }
-                elif tool_name == "matp_get_context_summary":
-                    summary_text = store.get_session_summary()
-                    response = {
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "result": {
-                            "content": [{"type": "text", "text": summary_text}]
-                        }
-                    }
-                else:
-                    response = {
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "error": {"code": -32601, "message": f"Tool '{tool_name}' not found"}
+                        "error": {"code": -32000, "message": f"{type(exc).__name__}: {exc}"},
                     }
             else:
                 response = {
                     "jsonrpc": "2.0",
                     "id": req_id,
-                    "result": {"status": "ok"}
+                    "error": {"code": -32601, "message": f"Unknown method: {method}"},
                 }
+            sys.stdout.write(json.dumps(response, default=str) + "\n")
+            sys.stdout.flush()
+        except Exception as exc:
+            sys.stdout.write(
+                json.dumps(
+                    {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(exc)}}
+                )
+                + "\n"
+            )
+            sys.stdout.flush()
 
-            sys.stdout.write(json.dumps(response) + "\n")
-            sys.stdout.flush()
-        except Exception as e:
-            err_resp = {
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {"code": -32000, "message": str(e)}
-            }
-            sys.stdout.write(json.dumps(err_resp) + "\n")
-            sys.stdout.flush()
+
+def main() -> None:
+    store = MATPMemoryStore(
+        db_path=str(config.DB_PATH),
+        session_id="mcp",
+        scope_id="mcp",
+        enable_queue=config.NEURAL_MODE != "off",
+        auto_migrate=True,
+    )
+    try:
+        handle_rpc(store)
+    finally:
+        store.close()
+
 
 if __name__ == "__main__":
-    handle_rpc()
+    main()

@@ -1,0 +1,90 @@
+{
+  "tokenizer": "heuristic(words+punct)",
+  "dataset_size": 30,
+  "query_count": 10,
+  "stats": {
+    "total_entries": 30,
+    "total_raw_tokens": 61122,
+    "total_distilled_tokens": 4524,
+    "compression_ratio_pct": 92.6,
+    "token_reduction_factor": 13.51,
+    "validity": {
+      "fresh": 30
+    },
+    "queue": {
+      "counts": {},
+      "queued": 0,
+      "running": 0,
+      "done": 0,
+      "failed": 0,
+      "oldest_queued_age_s": 0.0
+    }
+  },
+  "domain_stats": {
+    "SQL Database": {
+      "avg_raw": 3441.0,
+      "avg_distilled": 234.0,
+      "compression_pct": 93.2
+    },
+    "Runtime Traceback": {
+      "avg_raw": 1808.0,
+      "avg_distilled": 107.0,
+      "compression_pct": 94.1
+    },
+    "REST API Response": {
+      "avg_raw": 1416.0,
+      "avg_distilled": 178.0,
+      "compression_pct": 87.4
+    },
+    "File System / Bash": {
+      "avg_raw": 2185.0,
+      "avg_distilled": 131.0,
+      "compression_pct": 94.0
+    },
+    "Doc / PDF Parsing": {
+      "avg_raw": 1337.0,
+      "avg_distilled": 104.0,
+      "compression_pct": 92.2
+    }
+  },
+  "retrieval": {
+    "strict_p1_matp": 50.0,
+    "strict_p1_raw": 20.0,
+    "strict_p3_matp": 80.0,
+    "strict_p3_raw": 60.0,
+    "domain_p1_matp": 100.0,
+    "domain_p1_raw": 60.0,
+    "domain_p3_matp": 100.0,
+    "domain_p3_raw": 60.0,
+    "fact_retention_matp": 88.0,
+    "fact_retention_raw": 37.3,
+    "median_latency_ms_matp": 4.6795,
+    "median_latency_ms_raw": 1.4842
+  },
+  "latency_scaling": {
+    "sizes": [
+      30,
+      60,
+      120,
+      240
+    ],
+    "matp_ms": [
+      3.7905,
+      10.0872,
+      18.6929,
+      43.8311
+    ],
+    "raw_ms": [
+      1.1212,
+      2.5741,
+      4.9782,
+      10.0149
+    ]
+  },
+  "plots": [
+    "C:\\Users\\shish\\Documents\\NITK projects\\LLMs\\benchmarks\\results\\fig1_token_compression.png",
+    "C:\\Users\\shish\\Documents\\NITK projects\\LLMs\\benchmarks\\results\\fig2_context_growth.png",
+    "C:\\Users\\shish\\Documents\\NITK projects\\LLMs\\benchmarks\\results\\fig3_retrieval_and_latency.png",
+    "C:\\Users\\shish\\Documents\\NITK projects\\LLMs\\benchmarks\\results\\fig4_token_mass.png"
+  ]
+}
